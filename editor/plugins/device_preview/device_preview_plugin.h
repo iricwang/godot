@@ -7,12 +7,6 @@
 
 class DeviceProfile;
 class MenuButton;
-class OptionButton;
-class PopupMenu;
-class SubViewport;
-class SubViewportContainer;
-class AspectRatioContainer;
-class MarginContainer;
 
 class DevicePreviewPlugin : public EditorPlugin {
 	GDCLASS(DevicePreviewPlugin, EditorPlugin);
@@ -21,18 +15,16 @@ class DevicePreviewPlugin : public EditorPlugin {
 		MENU_FREE = 0,
 		MENU_CUSTOM = 1,
 		MENU_SEPARATOR = 2,
-		MENU_DEVICE = 3, // device entries start here
+		MENU_DEVICE = 3,
 	};
 
 	MenuButton *device_menu = nullptr;
-	Control *preview_overlay = nullptr;
-	MarginContainer *matte = nullptr;
-	AspectRatioContainer *ratio_container = nullptr;
-	SubViewportContainer *svp_container = nullptr;
-	SubViewport *preview_viewport = nullptr;
 
-	String current_device_name; // Empty = "Free"
-	int current_zoom_percent = 100;
+	String current_device_name;
+	Ref<DeviceProfile> current_profile;
+
+	Vector2i saved_viewport_size;
+	bool preview_active = false;
 
 	void _build_menu();
 	void _on_device_selected(int p_id);
@@ -49,5 +41,4 @@ public:
 	virtual bool has_main_screen() const override { return false; }
 
 	DevicePreviewPlugin();
-	~DevicePreviewPlugin();
 };

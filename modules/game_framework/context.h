@@ -58,6 +58,8 @@ public:
 	void dismiss_dialog(Dialog *p_dialog);
 	void show_toast(const Ref<Toast> &p_toast);
 	void show_toast_with_owner(const Ref<Toast> &p_toast, Object *p_owner);
+	void clear_all_toasts();
+	void clear_toasts_by_owner(Object *p_owner);
 
 	// ---- Activity registration (delegates to ActivityManager) ----
 	void register_activity(const String &p_action, const String &p_scene_path);

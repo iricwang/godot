@@ -14,6 +14,7 @@ class Activity;
 class Dialog;
 class Control;
 class Application;
+class Node;
 
 // Single-task-stack activity manager (the multi-task / affinity machinery from Android is intentionally omitted).
 // Resolves an Intent's action to a registered scene, instantiates the Activity, drives its lifecycle + transition,
@@ -22,6 +23,13 @@ class Application;
 class ActivityManager : public Object {
 	GDCLASS(ActivityManager, Object);
 
+public:
+	enum ToastDisplayMode {
+		SERIAL,   // FIFO queue — one toast at a time (default)
+		PARALLEL, // all toasts render simultaneously
+	};
+
+private:
 	Control *root = nullptr; // container under which activities/dialogs/toasts are added (set by the game at startup)
 	HashMap<String, String> registry; // action -> scene path
 	Vector<Activity *> stack;
@@ -29,11 +37,14 @@ class ActivityManager : public Object {
 
 	Vector<Ref<Toast>> toast_queue;
 	bool toast_active = false;
+	ToastDisplayMode toast_mode = SERIAL;
+	Vector<Node *> active_toast_panels; // parallel mode: active toast nodes
 
 	Application *app = nullptr; // set by Application::initialize()
 
 	void _begin_exit(Activity *p_act); // run exit transition then queue_free
 	void _show_next_toast();
+	void _spawn_toast_node(const Ref<Toast> &p_toast); // shared render helper (serial + parallel)
 	void _on_toast_finished(Object *p_panel);
 
 protected:
@@ -57,6 +68,11 @@ public:
 	void dismiss_dialog(Dialog *p_dialog);
 	void show_toast(const Ref<Toast> &p_toast);
 	void show_toast_with_owner(const Ref<Toast> &p_toast, Object *p_owner);
+	void clear_all_toasts();
+	void clear_toasts_by_owner(Object *p_owner);
+
+	void set_toast_display_mode(ToastDisplayMode p_mode);
+	ToastDisplayMode get_toast_display_mode() const;
 
 	Activity *get_current_activity() const;
 	int get_stack_size() const;
@@ -83,3 +99,5 @@ private:
 	// Resolve a null owner to the current top Activity (or Application if stack is empty).
 	Object *_resolve_default_owner();
 };
+
+VARIANT_ENUM_CAST(ActivityManager::ToastDisplayMode);

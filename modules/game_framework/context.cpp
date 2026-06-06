@@ -116,6 +116,16 @@ void Context::show_toast_with_owner(const Ref<Toast> &p_toast, Object *p_owner) 
 	app->get_activity_manager()->show_toast_with_owner(p_toast, p_owner);
 }
 
+void Context::clear_all_toasts() {
+	ERR_FAIL_NULL(app);
+	app->get_activity_manager()->clear_all_toasts();
+}
+
+void Context::clear_toasts_by_owner(Object *p_owner) {
+	ERR_FAIL_NULL(app);
+	app->get_activity_manager()->clear_toasts_by_owner(p_owner);
+}
+
 // ---- Activity registration ----
 
 void Context::register_activity(const String &p_action, const String &p_scene_path) {
@@ -183,6 +193,8 @@ void Context::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("dismiss_dialog", "dialog"), &Context::dismiss_dialog);
 	ClassDB::bind_method(D_METHOD("show_toast", "toast"), &Context::show_toast);
 	ClassDB::bind_method(D_METHOD("show_toast_with_owner", "toast", "owner"), &Context::show_toast_with_owner);
+		ClassDB::bind_method(D_METHOD("clear_all_toasts"), &Context::clear_all_toasts);
+		ClassDB::bind_method(D_METHOD("clear_toasts_by_owner", "owner"), &Context::clear_toasts_by_owner);
 
 	ClassDB::bind_method(D_METHOD("register_activity", "action", "scene_path"), &Context::register_activity);
 

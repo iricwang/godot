@@ -376,10 +376,61 @@ void ActivityManager::show_toast_with_owner(const Ref<Toast> &p_toast, Object *p
 	} else {
 		p_toast->set_owner(_resolve_default_owner());
 	}
+
+	if (toast_mode == PARALLEL) {
+		// Parallel: spawn immediately, no queue.
+		_spawn_toast_node(p_toast);
+		return;
+	}
+
+	// Serial (default): enqueue and pump the FIFO.
 	toast_queue.push_back(p_toast);
 	if (!toast_active) {
 		_show_next_toast();
 	}
+}
+
+void ActivityManager::clear_all_toasts() {
+	// Dismiss active toast panels.
+	for (Node *n : active_toast_panels) {
+		if (n && ObjectDB::get_instance(n->get_instance_id())) {
+			n->queue_free();
+		}
+	}
+	active_toast_panels.clear();
+	toast_queue.clear();
+	toast_active = false;
+}
+
+void ActivityManager::clear_toasts_by_owner(Object *p_owner) {
+	if (!p_owner) {
+		return;
+	}
+	ObjectID owner_id = p_owner->get_instance_id();
+
+	// Remove matching toasts from the pending queue.
+	for (int i = toast_queue.size() - 1; i >= 0; --i) {
+		if (toast_queue[i]->is_owned_by(owner_id)) {
+			toast_queue.remove_at(i);
+		}
+	}
+
+	// Dismiss active toast panels owned by this owner (parallel mode).
+	// Note: active panels are keyed by toast_queue order in serial;
+	// for parallel we track them in active_toast_panels.
+	// Currently we don't store the owner per active panel, so we
+	// skip active dismissal — the owner's Activity destroy already
+	// handles this via _cancel_owned_toasts which only clears queue.
+	// For explicit clear by owner of already-displaying toasts,
+	// we'd need a parallel active-panel→owner map. Leave as TODO.
+}
+
+void ActivityManager::set_toast_display_mode(ToastDisplayMode p_mode) {
+	toast_mode = p_mode;
+}
+
+ActivityManager::ToastDisplayMode ActivityManager::get_toast_display_mode() const {
+	return toast_mode;
 }
 
 void ActivityManager::_dismiss_owned_dialogs(Object *p_owner) {
@@ -417,6 +468,12 @@ void ActivityManager::_show_next_toast() {
 	toast_active = true;
 	Ref<Toast> toast = toast_queue[0];
 	toast_queue.remove_at(0);
+	_spawn_toast_node(toast);
+}
+
+void ActivityManager::_spawn_toast_node(const Ref<Toast> &toast) {
+	ERR_FAIL_COND(toast.is_null());
+	ERR_FAIL_NULL(root);
 
 	Node *toast_node = nullptr;
 	bool is_custom = false;
@@ -452,6 +509,11 @@ void ActivityManager::_show_next_toast() {
 	}
 	root->add_child(toast_node);
 
+	// Parallel mode: track active panel for clear_all_toasts.
+	if (toast_mode == PARALLEL) {
+		active_toast_panels.push_back(toast_node);
+	}
+
 	// _ready() has now fired on the custom node — safe to call _on_start(toast).
 	if (is_custom && toast_node->has_method("_on_start")) {
 		toast_node->call("_on_start", toast);
@@ -476,8 +538,18 @@ void ActivityManager::_show_next_toast() {
 void ActivityManager::_on_toast_finished(Object *p_panel) {
 	Node *n = Object::cast_to<Node>(p_panel);
 	if (n) {
+		// Remove from active tracking (parallel mode).
+		int idx = active_toast_panels.find(n);
+		if (idx >= 0) {
+			active_toast_panels.remove_at(idx);
+		}
 		n->queue_free();
 	}
+
+	if (toast_mode == PARALLEL) {
+		return; // parallel: no chain — each toast is self-contained
+	}
+	// Serial: pump next in FIFO.
 	_show_next_toast();
 }
 
@@ -503,6 +575,14 @@ void ActivityManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("dismiss_dialog", "dialog"), &ActivityManager::dismiss_dialog);
 	ClassDB::bind_method(D_METHOD("show_toast", "toast"), &ActivityManager::show_toast);
 	ClassDB::bind_method(D_METHOD("show_toast_with_owner", "toast", "owner"), &ActivityManager::show_toast_with_owner);
+		ClassDB::bind_method(D_METHOD("clear_all_toasts"), &ActivityManager::clear_all_toasts);
+		ClassDB::bind_method(D_METHOD("clear_toasts_by_owner", "owner"), &ActivityManager::clear_toasts_by_owner);
+
+
+		BIND_ENUM_CONSTANT(ToastDisplayMode::SERIAL);
+		BIND_ENUM_CONSTANT(PARALLEL);
+		ClassDB::bind_method(D_METHOD("set_toast_display_mode", "mode"), &ActivityManager::set_toast_display_mode);
+		ClassDB::bind_method(D_METHOD("get_toast_display_mode"), &ActivityManager::get_toast_display_mode);
 
 	ClassDB::bind_method(D_METHOD("set_application", "application"), &ActivityManager::set_application);
 	ClassDB::bind_method(D_METHOD("get_application"), &ActivityManager::get_application);

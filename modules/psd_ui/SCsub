@@ -1,0 +1,54 @@
+#!/usr/bin/env python
+from misc.utility.scons_hints import *
+
+Import("env")
+Import("env_modules")
+
+env_psd_ui = env_modules.Clone()
+
+# Thirdparty source files
+thirdparty_obj = []
+thirdparty_dir = "#thirdparty/psd_sdk/"
+
+thirdparty_sources = [
+    "PsdAllocator.cpp",
+    "PsdBlendMode.cpp",
+    "PsdColorMode.cpp",
+    "PsdDecompressRle.cpp",
+    "PsdExport.cpp",
+    "PsdFixedSizeString.cpp",
+    "PsdInterleave.cpp",
+    "PsdLayerCanvasCopy.cpp",
+    "PsdMallocAllocator.cpp",
+    "PsdNativeFile.cpp",
+    "PsdParseColorModeDataSection.cpp",
+    "PsdParseDocument.cpp",
+    "PsdParseImageDataSection.cpp",
+    "PsdParseImageResourcesSection.cpp",
+    "PsdParseLayerMaskSection.cpp",
+    "PsdPch.cpp",
+    "Psdminiz.c",
+    "PsdSyncFileReader.cpp",
+    "PsdSyncFileWriter.cpp",
+    "PsdStringUtil.cpp",
+    "PsdFile.cpp",
+]
+
+thirdparty_sources = [thirdparty_dir + file for file in thirdparty_sources]
+
+env_psd_ui.Prepend(CPPPATH=[thirdparty_dir])
+
+env_thirdparty = env_psd_ui.Clone()
+env_thirdparty.disable_warnings()
+env_thirdparty.add_source_files(thirdparty_obj, thirdparty_sources)
+env.modules_sources += thirdparty_obj
+
+# Godot source files
+module_obj = []
+env_psd_ui.add_source_files(module_obj, "*.cpp")
+if env.editor_build:
+    env_psd_ui.add_source_files(module_obj, "editor/*.cpp")
+env.modules_sources += module_obj
+
+# Needed to force rebuilding the module files when the thirdparty library is updated.
+env.Depends(module_obj, thirdparty_obj)

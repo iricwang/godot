@@ -57,9 +57,6 @@ public:
 	// its PSD child layers are kept and parented under the instance.
 	static Control *build_scene(const Vector<PsdLayerInfo> &p_layers, const Size2i &p_doc_size, const Options &p_options, TextureMode p_mode, const HashMap<int, Ref<Texture2D>> *p_external_textures = nullptr, const HashMap<int, Ref<PackedScene>> *p_external_scenes = nullptr);
 
-	// Convenience for the ResourceImporter path: parse + build (embedded textures) + pack + save.
-	static Error convert(const String &p_psd_path, const String &p_output_scene_path, const Options &p_options);
-
 	static String sanitize_name(const String &p_name);
 
 private:

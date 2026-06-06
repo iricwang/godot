@@ -21,7 +21,7 @@ echo.
 cd /d "%GODOT_DIR%"
 
 REM Use powershell to strip ANSI color codes from SCons output
-%PYTHON% -m SCons platform=windows target=editor tests=yes -j31 2>&1 | powershell -Command "$input | ForEach-Object { $_ -replace '\e\[[0-9;]*m', '' }"
+%PYTHON% -m SCons platform=windows target=editor tests=yes game_framework=yes psd_ui=yes -j31 2>&1 | powershell -Command "$input | ForEach-Object { $_ -replace '\e\[[0-9;]*m', '' }"
 
 set BUILD_RESULT=%errorlevel%
 echo.

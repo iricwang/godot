@@ -6,7 +6,6 @@
 
 #include "core/config/project_settings.h"
 #include "core/io/image.h"
-#include "core/io/resource_saver.h"
 #include "core/math/math_funcs.h"
 #include "core/os/memory.h"
 #include "scene/gui/label.h"
@@ -183,6 +182,48 @@ Error PsdUiConverter::parse(const String &p_psd_path, const Options &p_options, 
 		}
 	}
 
+	// Third pass: recompute group-layer bounds from their direct children.
+	// psd_sdk may not populate group bounds correctly, so we derive them
+	// from the children's bounding boxes in document space.
+	for (int i = 0; i < r_layers.size(); ++i) {
+		PsdLayerInfo &info = r_layers.write[i];
+		if (!info.is_group) {
+			continue;
+		}
+
+		int min_left = info.left;
+		int min_top = info.top;
+		int max_right = info.right;
+		int max_bottom = info.bottom;
+		bool has_child = false;
+
+		for (int j = 0; j < r_layers.size(); ++j) {
+			if (r_layers[j].parent_index != i) {
+				continue;
+			}
+			if (!has_child) {
+				min_left = r_layers[j].left;
+				min_top = r_layers[j].top;
+				max_right = r_layers[j].right;
+				max_bottom = r_layers[j].bottom;
+				has_child = true;
+			} else {
+				min_left = MIN(min_left, r_layers[j].left);
+				min_top = MIN(min_top, r_layers[j].top);
+				max_right = MAX(max_right, r_layers[j].right);
+				max_bottom = MAX(max_bottom, r_layers[j].bottom);
+			}
+		}
+
+		if (has_child) {
+			// Expand by 1px to avoid clipping edge pixels.
+			info.left = min_left - 1;
+			info.top = min_top - 1;
+			info.right = max_right + 1;
+			info.bottom = max_bottom + 1;
+		}
+	}
+
 	DestroyLayerMaskSection(layerMaskSection, &allocator);
 	DestroyDocument(document, &allocator);
 	file.Close();
@@ -330,35 +371,6 @@ Control *PsdUiConverter::build_scene(const Vector<PsdLayerInfo> &p_layers, const
 	}
 
 	return root;
-}
-
-Error PsdUiConverter::convert(const String &p_psd_path, const String &p_output_scene_path, const Options &p_options) {
-	Vector<PsdLayerInfo> layers;
-	Size2i doc_size;
-	Error err = parse(p_psd_path, p_options, layers, doc_size);
-	if (err != OK) {
-		return err;
-	}
-
-	// ResourceImporter path: textures are embedded so the imported scene is self-contained.
-	Control *root = build_scene(layers, doc_size, p_options, TEXTURE_EMBED, nullptr);
-
-	Ref<PackedScene> packed_scene;
-	packed_scene.instantiate();
-	err = packed_scene->pack(root);
-	if (err != OK) {
-		ERR_PRINT("Failed to pack PSD scene.");
-		memdelete(root);
-		return err;
-	}
-
-	err = ResourceSaver::save(packed_scene, p_output_scene_path);
-	if (err != OK) {
-		ERR_PRINT("Failed to save PSD scene: " + p_output_scene_path);
-	}
-
-	memdelete(root);
-	return err;
 }
 
 Ref<Image> PsdUiConverter::_extract_layer_image(void *p_document, void *p_layer) {

@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="SceneService" inherits="Object" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Manages scene tree replacement without destroying the Application.
+	</brief_description>
+	<description>
+		SceneService replaces the child subtree under the root [Control] without using [method SceneTree.change_scene_to_file], which would destroy the [Application] instance. The root Control (and its owning GDScript) survives the switch, so the [Application], [ServiceRegistry], [ResourceManager], and [ActivityManager] remain intact.
+
+		When switching scenes, [method change_scene] or [method change_scene_sync] automatically calls [method ActivityManager.cleanup_all] to drain old Activities, Dialogs, and Toasts, then replaces the root's child node with the new scene's root.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="change_scene">
+			<return type="void" />
+			<param index="0" name="path" type="String" />
+			<description>
+				Asynchronously loads the [code].tscn[/code] at [param path] and replaces the root's child subtree when ready. During loading, [method get_loading_progress] can be polled.
+			</description>
+		</method>
+		<method name="change_scene_sync">
+			<return type="void" />
+			<param index="0" name="path" type="String" />
+			<description>
+				Synchronously loads and applies the scene immediately. Blocks until the load is complete.
+			</description>
+		</method>
+		<method name="change_scene_with_callback">
+			<return type="void" />
+			<param index="0" name="path" type="String" />
+			<param index="1" name="callback" type="Callable" />
+			<description>
+				Asynchronously loads the scene and calls [param callback] when complete.
+			</description>
+		</method>
+		<method name="get_current_scene" qualifiers="const">
+			<return type="String" />
+			<description>
+				Returns the path of the currently loaded scene.
+			</description>
+		</method>
+		<method name="get_loading_progress" qualifiers="const">
+			<return type="float" />
+			<description>
+				Returns the loading progress as a value from [code]0.0[/code] to [code]1.0[/code].
+			</description>
+		</method>
+		<method name="is_loading" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] while a scene is being loaded asynchronously.
+			</description>
+		</method>
+		<method name="preload_scene">
+			<return type="void" />
+			<param index="0" name="path" type="String" />
+			<description>
+				Preloads a scene into the resource cache without switching to it.
+			</description>
+		</method>
+		<method name="release_preload">
+			<return type="void" />
+			<param index="0" name="path" type="String" />
+			<description>
+				Releases a previously preloaded scene.
+			</description>
+		</method>
+	</methods>
+</class>

@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="ViewModel" inherits="RefCounted" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Base class for MVVM view models.
+	</brief_description>
+	<description>
+		ViewModel holds a map of named [ObservableProperty] values. GDScript subclasses add business logic and command methods. Properties are created lazily on first access.
+
+		Use subscript syntax ([code]self["key"][/code]) to read/write properties — this routes through the C++ [code]_set[/code]/[code]_get[/code] overrides and triggers [ObservableProperty] change notifications:
+
+		[codeblock]
+		extends ViewModel
+		func _init():
+		    self["counter"] = 0
+		    self["title"] = "Hello"
+
+		func on_increment():
+		    self["counter"] = self["counter"] + 1  # UI auto-updates via BindingEngine
+		[/codeblock]
+
+		Bind to UI nodes with [method Context.bind_property] and [method Context.bind_command].
+		Call [method dispose] in [method Activity._on_destroy] to release all property subscribers.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="dispose">
+			<return type="void" />
+			<description>
+				Releases all [ObservableProperty] instances, disconnecting all subscribers. Call this in [method Activity._on_destroy].
+			</description>
+		</method>
+		<method name="get_property">
+			<return type="ObservableProperty" />
+			<param index="0" name="name" type="StringName" />
+			<description>
+				Returns the [ObservableProperty] named [param name], creating it if it doesn't exist.
+			</description>
+		</method>
+		<method name="get_property_names" qualifiers="const">
+			<return type="PackedStringArray" />
+			<description>
+				Returns the names of all currently tracked properties.
+			</description>
+		</method>
+		<method name="get_value" qualifiers="const">
+			<return type="Variant" />
+			<param index="0" name="name" type="StringName" />
+			<description>
+				Returns the current value of the named property. Returns [code]null[/code] if the property does not exist.
+			</description>
+		</method>
+		<method name="has_property" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="name" type="StringName" />
+			<description>
+				Returns [code]true[/code] if a property with [param name] has been created.
+			</description>
+		</method>
+		<method name="set_property">
+			<return type="void" />
+			<param index="0" name="name" type="StringName" />
+			<param index="1" name="value" type="Variant" />
+			<description>
+				Sets the value of the named property. Creates it if it doesn't exist. If the value changes, all subscribers (e.g. UI bindings) are notified.
+			</description>
+		</method>
+		<method name="subscribe_property">
+			<return type="void" />
+			<param index="0" name="name" type="StringName" />
+			<param index="1" name="callable" type="Callable" />
+			<description>
+				Subscribes a callback to value changes of the named property. The callback receives the new value as its argument.
+			</description>
+		</method>
+	</methods>
+</class>

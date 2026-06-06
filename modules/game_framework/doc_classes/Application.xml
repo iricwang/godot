@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="Application" inherits="Context" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Root of the game_framework Context hierarchy. Owns all service/manager instances.
+	</brief_description>
+	<description>
+		Application extends [Context] and owns the three core managers as member variables (not as Godot singletons):
+		- [method get_activity_manager] — [ActivityManager]
+		- [method get_resource_manager] — [ResourceManager]
+		- [method get_service_registry] — [ServiceRegistry]
+
+		Create one in your main scene's [code]_ready()[/code]:
+		[codeblock]
+		var app = Application.new()
+		app.initialize($UIRoot)
+		app.register_activity("main", "res://scenes/main_activity.tscn")
+		app.start_activity(Intent.new())
+		# ... set up ...
+		[/codeblock]
+
+		Call [method shutdown] before quitting to gracefully drain all Activities, Dialogs, and Toasts.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_activity_manager" qualifiers="const">
+			<return type="ActivityManager" />
+			<description>
+				Returns the [ActivityManager] owned by this Application.
+			</description>
+		</method>
+		<method name="get_resource_manager" qualifiers="const">
+			<return type="ResourceManager" />
+			<description>
+				Returns the [ResourceManager] owned by this Application.
+			</description>
+		</method>
+		<method name="get_service_registry" qualifiers="const">
+			<return type="ServiceRegistry" />
+			<description>
+				Returns the [ServiceRegistry] owned by this Application.
+			</description>
+		</method>
+		<method name="initialize">
+			<return type="void" />
+			<param index="0" name="root" type="Control" />
+			<description>
+				Creates the three managers, wires them together, and sets [param root] as the ActivityManager's root container. Must be called exactly once, before any Activity is started.
+			</description>
+		</method>
+		<method name="shutdown">
+			<return type="void" />
+			<description>
+				Drains all Activities, Dialogs, and Toasts, then destroys the three managers. Safe to call even if [method initialize] was never called.
+			</description>
+		</method>
+	</methods>
+</class>

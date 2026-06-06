@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="ActivityManager" inherits="Object" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Manages the Activity back stack, Dialogs, and Toast queue.
+	</brief_description>
+	<description>
+		ActivityManager is the runtime engine behind the Activity system. It maintains the back stack, resolves Intents to registered Activity scenes, drives lifecycle callbacks, runs enter/exit transitions, and manages the Dialog overlay list and Toast FIFO queue.
+
+		Owned by [Application]. Users mostly interact with it indirectly through [Context] and [Activity] convenience methods, but direct access is available via [method Application.get_activity_manager] for debug inspection methods like [method get_stack_activity], [method get_dialog], etc.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="back">
+			<return type="bool" />
+			<description>
+				Triggers the system back gesture. Returns [code]false[/code] if the stack is empty.
+			</description>
+		</method>
+		<method name="cleanup_all">
+			<return type="void" />
+			<description>
+				Drains all Activities, Dialogs, and Toasts. Called by [method Application.shutdown].
+			</description>
+		</method>
+		<method name="dismiss_dialog">
+			<return type="void" />
+			<param index="0" name="dialog" type="Dialog" />
+			<description>
+				Dismisses a specific Dialog.
+			</description>
+		</method>
+		<method name="finish_activity">
+			<return type="void" />
+			<param index="0" name="activity" type="Activity" />
+			<description>
+				Finishes (destroys) a specific Activity, cleaning up its owned Dialogs and Toasts.
+			</description>
+		</method>
+		<method name="finish_top">
+			<return type="void" />
+			<description>
+				Finishes the top Activity in the stack.
+			</description>
+		</method>
+		<method name="get_application" qualifiers="const">
+			<return type="Application" />
+			<description>
+				Returns the owning [Application].
+			</description>
+		</method>
+		<method name="get_current_activity" qualifiers="const">
+			<return type="Activity" />
+			<description>
+				Returns the current top Activity.
+			</description>
+		</method>
+		<method name="get_dialog" qualifiers="const">
+			<return type="Dialog" />
+			<param index="0" name="idx" type="int" />
+			<description>
+				Returns the Dialog at [param idx] in the overlay list. Debug inspection only.
+			</description>
+		</method>
+		<method name="get_dialog_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns the number of active Dialogs.
+			</description>
+		</method>
+		<method name="get_root" qualifiers="const">
+			<return type="Control" />
+			<description>
+				Returns the root [Control] container.
+			</description>
+		</method>
+		<method name="get_stack_activity" qualifiers="const">
+			<return type="Activity" />
+			<param index="0" name="idx" type="int" />
+			<description>
+				Returns the Activity at [param idx] in the back stack (0 = bottom). Debug inspection only.
+			</description>
+		</method>
+		<method name="get_stack_size" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns the number of Activities in the back stack.
+			</description>
+		</method>
+		<method name="get_toast_queue_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns the number of Toasts waiting in the queue.
+			</description>
+		</method>
+		<method name="get_toast_queue_item" qualifiers="const">
+			<return type="Toast" />
+			<param index="0" name="idx" type="int" />
+			<description>
+				Returns the Toast at [param idx] in the pending queue. Debug inspection only.
+			</description>
+		</method>
+		<method name="is_toast_active" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] if a Toast is currently being displayed.
+			</description>
+		</method>
+		<method name="register_activity">
+			<return type="void" />
+			<param index="0" name="action" type="String" />
+			<param index="1" name="scene_path" type="String" />
+			<description>
+				Registers an Activity scene ([code].tscn[/code]) for the given action string. When an Intent with this action is started, the scene is instantiated.
+			</description>
+		</method>
+		<method name="set_root">
+			<return type="void" />
+			<param index="0" name="root" type="Control" />
+			<description>
+				Sets the root [Control] container under which all Activities, Dialogs, and Toasts are added.
+			</description>
+		</method>
+		<method name="show_dialog">
+			<return type="void" />
+			<param index="0" name="intent" type="Intent" />
+			<description>
+				Shows a Dialog. Owner defaults to the current top Activity.
+			</description>
+		</method>
+		<method name="show_dialog_with_owner">
+			<return type="void" />
+			<param index="0" name="intent" type="Intent" />
+			<param index="1" name="owner" type="Object" />
+			<description>
+				Shows a Dialog with an explicit lifecycle owner.
+			</description>
+		</method>
+		<method name="show_toast">
+			<return type="void" />
+			<param index="0" name="toast" type="Toast" />
+			<description>
+				Enqueues a Toast for display.
+			</description>
+		</method>
+		<method name="show_toast_with_owner">
+			<return type="void" />
+			<param index="0" name="toast" type="Toast" />
+			<param index="1" name="owner" type="Object" />
+			<description>
+				Enqueues a Toast with an explicit lifecycle owner.
+			</description>
+		</method>
+		<method name="start_activity">
+			<return type="void" />
+			<param index="0" name="intent" type="Intent" />
+			<description>
+				Starts a new Activity based on [param intent].action, applying any [Intent] flags.
+			</description>
+		</method>
+	</methods>
+</class>

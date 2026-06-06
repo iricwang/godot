@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="ObservableProperty" inherits="RefCounted" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		A single observable value that emits a signal when changed.
+	</brief_description>
+	<description>
+		ObservableProperty wraps a single [Variant] value and emits [signal value_changed] whenever [method set_value] is called with a different value. Used internally by [ViewModel]; can also be used standalone.
+
+		Subscriptions are automatically disconnected when the ObservableProperty is freed (via [method ViewModel.dispose] or [RefCounted] lifecycle).
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_value" qualifiers="const">
+			<return type="Variant" />
+			<description>
+				Returns the current value.
+			</description>
+		</method>
+		<method name="set_value">
+			<return type="void" />
+			<param index="0" name="value" type="Variant" />
+			<description>
+				Sets the value. If different from the current value, emits [signal value_changed] and notifies subscribers.
+			</description>
+		</method>
+		<method name="subscribe">
+			<return type="void" />
+			<param index="0" name="callable" type="Callable" />
+			<description>
+				Subscribes a callback to value changes. The callback receives the new value.
+			</description>
+		</method>
+		<method name="unsubscribe">
+			<return type="void" />
+			<param index="0" name="callable" type="Callable" />
+			<description>
+				Removes a previously added subscriber.
+			</description>
+		</method>
+	</methods>
+	<signals>
+		<signal name="value_changed">
+			<param index="0" name="value" type="Variant" />
+			<description>
+				Emitted when the value changes. The new value is passed as [param value].
+			</description>
+		</signal>
+	</signals>
+</class>

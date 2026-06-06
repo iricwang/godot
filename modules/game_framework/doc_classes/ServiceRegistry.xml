@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="ServiceRegistry" inherits="Object" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		A compile-time service locator.
+	</brief_description>
+	<description>
+		ServiceRegistry allows modules to register and discover services by name at runtime, without compile-time coupling. It replaces dynamic plugin loading for cross-platform compatibility.
+
+		Owned by [Application] — not a global singleton.
+
+		[b]Note:[/b] ServiceRegistry stores raw [Object] pointers. The caller is responsible for keeping the service object alive (prevent GC for [RefCounted] services by holding a reference in your script).
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_service" qualifiers="const">
+			<return type="Object" />
+			<param index="0" name="name" type="StringName" />
+			<description>
+				Returns the service registered under [param name], or [code]null[/code].
+			</description>
+		</method>
+		<method name="get_service_names" qualifiers="const">
+			<return type="PackedStringArray" />
+			<description>
+				Returns the names of all registered services.
+			</description>
+		</method>
+		<method name="has_service" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="name" type="StringName" />
+			<description>
+				Returns [code]true[/code] if a service with [param name] is registered.
+			</description>
+		</method>
+		<method name="register_service">
+			<return type="void" />
+			<param index="0" name="name" type="StringName" />
+			<param index="1" name="service" type="Object" />
+			<description>
+				Registers [param service] under [param name]. Replaces any existing registration.
+			</description>
+		</method>
+		<method name="unregister_service">
+			<return type="void" />
+			<param index="0" name="name" type="StringName" />
+			<description>
+				Removes the service registered under [param name].
+			</description>
+		</method>
+	</methods>
+</class>

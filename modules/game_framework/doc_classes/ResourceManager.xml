@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="ResourceManager" inherits="Object" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Manages synchronous and asynchronous resource loading.
+	</brief_description>
+	<description>
+		ResourceManager wraps Godot's [ResourceLoader] to provide [ResourceHandle]-based loading. Async loading uses [code]load_threaded_request[/code] + per-frame polling via [code]SceneTree.process_frame[/code]. On platforms without threads (single-threaded Web export), it falls back to synchronous load.
+
+		Owned by [Application] — not a global singleton.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_handle">
+			<return type="ResourceHandle" />
+			<param index="0" name="path" type="String" />
+			<description>
+				Returns a [ResourceHandle] for [param path], creating one if it doesn't exist. The handle tracks loading state; use it to check progress or connect to signals.
+			</description>
+		</method>
+		<method name="load_async">
+			<return type="void" />
+			<param index="0" name="path" type="String" />
+			<param index="1" name="callback" type="Callable" default="Callable()" />
+			<param index="2" name="priority" type="int" default="0" />
+			<description>
+				Loads the resource at [param path] asynchronously. [param callback] receives the loaded [Resource] (or [code]null[/code] on failure). [param priority] is currently ignored (reserved for future use).
+			</description>
+		</method>
+		<method name="load_sync">
+			<return type="Resource" />
+			<param index="0" name="path" type="String" />
+			<description>
+				Synchronously loads the resource at [param path] and returns it immediately.
+			</description>
+		</method>
+	</methods>
+</class>

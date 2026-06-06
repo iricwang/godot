@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="Activity" inherits="Control" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		A full-screen UI screen with an Android-style lifecycle.
+	</brief_description>
+	<description>
+		Activity is the base class for every screen in a game_framework application.
+		Each Activity is driven by [ActivityManager], which calls the [code]dispatch_*[/code] lifecycle methods — users override the virtual [code]_on_*[/code] callbacks in GDScript instead.
+
+		Lifecycle order:
+		- On launch: [method _on_create] → [method _on_start] → [method _on_resume]
+		- On navigate away: [method _on_pause] → [method _on_stop] (may be [method _on_destroy] if removed from stack)
+		- On return: [method _on_resume] (from stopped state)
+		- On finish: [method _on_pause] → [method _on_stop] → [method _on_destroy]
+
+		Activity holds a [Context] reference and re-exports the most common Context methods directly, so you can write [code]start_activity(it)[/code] instead of [code]get_context().start_activity(it)[/code].
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="_on_back_pressed" qualifiers="virtual">
+			<return type="bool" />
+			<description>
+				Called when the system back gesture is triggered. Return [code]true[/code] to consume the event (prevent default close behavior), or [code]false[/code] to let [ActivityManager] finish this Activity.
+				Default returns [code]false[/code].
+			</description>
+		</method>
+		<method name="_on_create" qualifiers="virtual">
+			<return type="void" />
+			<param index="0" name="saved_state" type="Dictionary" />
+			<description>
+				Called once when the Activity is created, before it becomes visible. [param saved_state] is currently an empty Dictionary (state save/restore is not yet implemented); pass data via [member Intent.extras] instead.
+				This is where you build the UI tree, create the [ViewModel], and set up bindings.
+			</description>
+		</method>
+		<method name="_on_destroy" qualifiers="virtual">
+			<return type="void" />
+			<description>
+				Called when the Activity is being permanently destroyed. Release resources, dispose the [ViewModel], etc. After this callback the node will be removed from the scene tree.
+			</description>
+		</method>
+		<method name="_on_new_intent" qualifiers="virtual">
+			<return type="void" />
+			<param index="0" name="intent" type="Intent" />
+			<description>
+				Called when the Activity is reused via [code]FLAG_SINGLE_TOP[/code], [code]FLAG_CLEAR_TOP[/code], or [code]FLAG_REORDER_TO_FRONT[/code] — instead of creating a new instance, the existing one receives the new [Intent].
+			</description>
+		</method>
+		<method name="_on_pause" qualifiers="virtual">
+			<return type="void" />
+			<description>
+				Called when the Activity is no longer the active (focused) screen. A new Activity is being started on top, or this one is being finished.
+			</description>
+		</method>
+		<method name="_on_resume" qualifiers="virtual">
+			<return type="void" />
+			<description>
+				Called when the Activity becomes the active (focused) screen. Either the initial launch after [method _on_start], or returning from a covered state.
+			</description>
+		</method>
+		<method name="_on_start" qualifiers="virtual">
+			<return type="void" />
+			<description>
+				Called after [method _on_create], when the Activity becomes visible for the first time. The UI tree is already in the scene.
+			</description>
+		</method>
+		<method name="_on_stop" qualifiers="virtual">
+			<return type="void" />
+			<description>
+				Called when the Activity is fully hidden (covered by a new Activity that finished its enter transition). The node is still in the scene tree but [member CanvasItem.visible] is set to [code]false[/code].
+			</description>
+		</method>
+		<method name="back" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Convenience for [method Context.back]. Triggers the system back gesture: calls [method _on_back_pressed] on the current top Activity; if not consumed, finishes it.
+			</description>
+		</method>
+		<method name="finish">
+			<return type="void" />
+			<description>
+				Requests the ActivityManager to finish (destroy) this Activity. Lifecycle: pauses, stops, destroys, then auto-dismisses owned Dialogs, cancels owned Toasts, and runs the exit transition.
+			</description>
+		</method>
+		<method name="finish_top">
+			<return type="void" />
+			<description>
+				Convenience for [method Context.finish_top]. Finishes the current top Activity.
+			</description>
+		</method>
+		<method name="get_context" qualifiers="const">
+			<return type="Context" />
+			<description>
+				Returns the [Context] assigned to this Activity. The context provides access to Application-wide services (navigation, resource loading, service discovery, etc.).
+			</description>
+		</method>
+		<method name="get_intent" qualifiers="const">
+			<return type="Intent" />
+			<description>
+				Returns the [Intent] that was used to launch this Activity.
+			</description>
+		</method>
+		<method name="get_no_history" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns whether this Activity was launched with [code]FLAG_NO_HISTORY[/code]. When [code]true[/code], the Activity is automatically destroyed when navigating away from it, instead of being kept in the back stack.
+			</description>
+		</method>
+		<method name="get_resource_handle" qualifiers="const">
+			<return type="ResourceHandle" />
+			<param index="0" name="path" type="String" />
+			<description>
+				Convenience for [method Context.get_resource_handle].
+			</description>
+		</method>
+		<method name="get_service" qualifiers="const">
+			<return type="Object" />
+			<param index="0" name="name" type="StringName" />
+			<description>
+				Convenience for [method Context.get_service].
+			</description>
+		</method>
+		<method name="has_service" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="name" type="StringName" />
+			<description>
+				Convenience for [method Context.has_service].
+			</description>
+		</method>
+		<method name="load_resource_async">
+			<return type="void" />
+			<param index="0" name="path" type="String" />
+			<param index="1" name="callback" type="Callable" default="Callable()" />
+			<param index="2" name="priority" type="int" default="0" />
+			<description>
+				Convenience for [method Context.load_resource_async].
+			</description>
+		</method>
+		<method name="load_resource_sync" qualifiers="const">
+			<return type="Resource" />
+			<param index="0" name="path" type="String" />
+			<description>
+				Convenience for [method Context.load_resource_sync].
+			</description>
+		</method>
+		<method name="set_no_history">
+			<return type="void" />
+			<param index="0" name="no_history" type="bool" />
+			<description>
+				Sets whether this Activity stays in the back stack. Set by [ActivityManager] when launched with [code]FLAG_NO_HISTORY[/code].
+			</description>
+		</method>
+		<method name="show_dialog">
+			<return type="void" />
+			<param index="0" name="intent" type="Intent" />
+			<description>
+				Convenience for [method Context.show_dialog]. The Dialog's lifecycle owner is set to this Activity — it will be auto-dismissed when this Activity is destroyed.
+			</description>
+		</method>
+		<method name="show_toast">
+			<return type="void" />
+			<param index="0" name="toast" type="Toast" />
+			<description>
+				Convenience for [method Context.show_toast]. The Toast's lifecycle owner is set to this Activity — it will be cancelled when this Activity is destroyed.
+			</description>
+		</method>
+		<method name="start_activity">
+			<return type="void" />
+			<param index="0" name="intent" type="Intent" />
+			<description>
+				Convenience for [method Context.start_activity].
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="no_history" type="bool" setter="set_no_history" getter="get_no_history" default="false">
+			If [code]true[/code], this Activity will be destroyed when a new Activity is started on top of it, instead of being paused and kept in the back stack.
+		</member>
+		<member name="transition_in" type="Transition" setter="set_transition_in" getter="get_transition_in">
+			The [Transition] resource used when this Activity enters the screen.
+		</member>
+		<member name="transition_out" type="Transition" setter="set_transition_out" getter="get_transition_out">
+			The [Transition] resource used when this Activity exits the screen.
+		</member>
+	</members>
+</class>

@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="ResourceHandle" inherits="RefCounted" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Track the loading state of a single resource.
+	</brief_description>
+	<description>
+		A ResourceHandle represents a single resource path. It tracks the loading state (unloaded, loading, loaded, failed) and emits signals when the resource becomes available. Get handles from [method ResourceManager.get_handle], or use the convenience methods on [Context].
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_path" qualifiers="const">
+			<return type="String" />
+			<description>
+				Returns the resource path this handle tracks.
+			</description>
+		</method>
+		<method name="get_resource" qualifiers="const">
+			<return type="Resource" />
+			<description>
+				Returns the loaded resource, or [code]null[/code] if not yet loaded or failed.
+			</description>
+		</method>
+		<method name="get_state" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns the current loading state. See the [enum State] constants.
+			</description>
+		</method>
+		<method name="is_loaded" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] if the resource has been successfully loaded.
+			</description>
+		</method>
+		<method name="load_sync">
+			<return type="Resource" />
+			<description>
+				Synchronously loads the resource now. No-op if already loaded.
+			</description>
+		</method>
+	</methods>
+	<signals>
+		<signal name="failed">
+			<param index="0" name="path" type="String" />
+			<description>
+				Emitted when loading fails. [param path] is the resource path.
+			</description>
+		</signal>
+		<signal name="loaded">
+			<param index="0" name="resource" type="Resource" />
+			<description>
+				Emitted when loading succeeds. [param resource] is the loaded resource.
+			</description>
+		</signal>
+	</signals>
+</class>

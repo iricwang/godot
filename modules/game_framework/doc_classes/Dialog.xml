@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="Dialog" inherits="Control" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		A modal overlay shown above the Activity stack.
+	</brief_description>
+	<description>
+		Dialog is a full-screen [Control] overlay rendered on top of the Activity stack by [ActivityManager]. It is [b]not[/b] an OS-level window — it uses a [Control] node so it works consistently across all platforms (mobile, web, console, desktop).
+
+		The dialog scene typically draws its own semi-transparent backdrop and a centered panel. Lifecycle: [method _on_create] (once) → visible → [method _on_dismiss] (when dismissed).
+
+		Each Dialog has an optional [code]lifecycle_owner[/code] — when the owning [Activity] is destroyed, its dialogs are auto-dismissed by [ActivityManager].
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="_on_create" qualifiers="virtual">
+			<return type="void" />
+			<param index="0" name="saved_state" type="Dictionary" />
+			<description>
+				Called once when the Dialog is created, after its scene is instantiated. [param saved_state] receives [member Intent.extras] from the launching [Intent]. Build the UI and set up bindings here.
+			</description>
+		</method>
+		<method name="_on_dismiss" qualifiers="virtual">
+			<return type="void" />
+			<description>
+				Called when the Dialog is being dismissed. Clean up resources, dispose the [ViewModel], etc. You do [b]not[/b] need to call [method dismiss] inside this callback.
+			</description>
+		</method>
+		<method name="dismiss">
+			<return type="void" />
+			<description>
+				Requests the ActivityManager to dismiss this Dialog. Triggers [method _on_dismiss], plays the exit transition, then removes the node.
+			</description>
+		</method>
+		<method name="get_context" qualifiers="const">
+			<return type="Context" />
+			<description>
+				Returns the [Context] assigned to this Dialog. The context provides access to Application-wide services.
+			</description>
+		</method>
+		<method name="get_intent" qualifiers="const">
+			<return type="Intent" />
+			<description>
+				Returns the [Intent] used to show this Dialog.
+			</description>
+		</method>
+		<method name="get_lifecycle_owner" qualifiers="const">
+			<return type="Object" />
+			<description>
+				Returns the object that owns this Dialog's lifecycle. When the owner is destroyed, this Dialog is auto-dismissed.
+			</description>
+		</method>
+		<method name="get_resource_handle" qualifiers="const">
+			<return type="ResourceHandle" />
+			<param index="0" name="path" type="String" />
+			<description>
+				Convenience for [method Context.get_resource_handle].
+			</description>
+		</method>
+		<method name="get_service" qualifiers="const">
+			<return type="Object" />
+			<param index="0" name="name" type="StringName" />
+			<description>
+				Convenience for [method Context.get_service].
+			</description>
+		</method>
+		<method name="has_service" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="name" type="StringName" />
+			<description>
+				Convenience for [method Context.has_service].
+			</description>
+		</method>
+		<method name="load_resource_async">
+			<return type="void" />
+			<param index="0" name="path" type="String" />
+			<param index="1" name="callback" type="Callable" default="Callable()" />
+			<param index="2" name="priority" type="int" default="0" />
+			<description>
+				Convenience for [method Context.load_resource_async].
+			</description>
+		</method>
+		<method name="load_resource_sync" qualifiers="const">
+			<return type="Resource" />
+			<param index="0" name="path" type="String" />
+			<description>
+				Convenience for [method Context.load_resource_sync].
+			</description>
+		</method>
+		<method name="show_toast">
+			<return type="void" />
+			<param index="0" name="toast" type="Toast" />
+			<description>
+				Convenience for [method Context.show_toast]. Toast is bound to this Dialog's lifecycle.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="transition_in" type="Transition" setter="set_transition_in" getter="get_transition_in">
+			The [Transition] resource for entering the screen.
+		</member>
+		<member name="transition_out" type="Transition" setter="set_transition_out" getter="get_transition_out">
+			The [Transition] resource for exiting the screen.
+		</member>
+	</members>
+</class>

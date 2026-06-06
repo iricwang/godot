@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="Toast" inherits="RefCounted" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		A lightweight transient-message descriptor.
+	</brief_description>
+	<description>
+		Toast describes a short message that appears near the bottom of the screen and fades out automatically. Create one with [method make_text], optionally attach a custom scene via [member custom_scene], then display it with [method Context.show_toast] or [method Activity.show_toast].
+
+		If [member custom_scene] is set, [ActivityManager] instantiates that scene instead of the default panel+label. The custom scene root may implement [code]_on_start(toast: Toast)[/code] to receive the Toast data after [code]_ready()[/code].
+
+		Each Toast has an optional [code]owner[/code] (set by ActivityManager). When the owner is destroyed, the Toast is removed from the pending queue.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_custom_scene" qualifiers="const">
+			<return type="String" />
+			<description>
+				Returns the custom scene path ([code].tscn[/code]) used for rendering this Toast, or an empty string for the default look.
+			</description>
+		</method>
+		<method name="get_duration" qualifiers="const">
+			<return type="float" />
+			<description>
+				Returns how long the Toast stays on screen (in seconds), excluding fade-in and fade-out.
+			</description>
+		</method>
+		<method name="get_owner" qualifiers="const">
+			<return type="Object" />
+			<description>
+				Returns the lifecycle owner of this Toast, or [code]null[/code] if unassigned or the owner has been destroyed.
+			</description>
+		</method>
+		<method name="get_text" qualifiers="const">
+			<return type="String" />
+			<description>
+				Returns the message text of this Toast.
+			</description>
+		</method>
+		<method name="make_text" qualifiers="static">
+			<return type="Toast" />
+			<param index="0" name="text" type="String" />
+			<param index="1" name="duration" type="float" default="2.0" />
+			<description>
+				Creates a new Toast with plain text. Equivalent to [code]Context.make_toast(text, duration)[/code].
+				[codeblock]
+				var t = Toast.make_text("Hello World", 3.0)
+				show_toast(t)
+				[/codeblock]
+			</description>
+		</method>
+		<method name="set_custom_scene">
+			<return type="void" />
+			<param index="0" name="path" type="String" />
+			<description>
+				Sets a custom [code].tscn[/code] path for rendering this Toast. If empty, the default panel+label is used.
+				[codeblock]
+				var t = Toast.make_text("Custom look", 3.0)
+				t.set_custom_scene("res://scenes/toast_custom.tscn")
+				show_toast(t)
+				[/codeblock]
+			</description>
+		</method>
+		<method name="set_duration">
+			<return type="void" />
+			<param index="0" name="duration" type="float" />
+			<description>
+				Sets how long the Toast stays on screen (in seconds).
+			</description>
+		</method>
+		<method name="set_owner">
+			<return type="void" />
+			<param index="0" name="owner" type="Object" />
+			<description>
+				Sets the lifecycle owner. Set by [ActivityManager]; manual use is not normally needed.
+			</description>
+		</method>
+		<method name="set_text">
+			<return type="void" />
+			<param index="0" name="text" type="String" />
+			<description>
+				Sets the message text of this Toast.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="custom_scene" type="String" setter="set_custom_scene" getter="get_custom_scene" default="&quot;&quot;">
+			Optional [code].tscn[/code] path for a custom Toast layout. When non-empty, [ActivityManager] instantiates this scene instead of the default panel+label.
+		</member>
+		<member name="duration" type="float" setter="set_duration" getter="get_duration" default="2.0">
+			Display duration in seconds (excluding fade-in/out).
+		</member>
+		<member name="text" type="String" setter="set_text" getter="get_text" default="&quot;&quot;">
+			The message text to display.
+		</member>
+	</members>
+</class>

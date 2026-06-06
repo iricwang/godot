@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="Intent" inherits="RefCounted" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Describes a request to start an Activity.
+	</brief_description>
+	<description>
+		Inspired by Android's Intent, trimmed to game UI needs. An Intent carries an [member action] (resolved to a registered Activity scene), optional [member data] / [member extras], and a set of launch [member flags].
+
+		[b]Flags[/b] control how [ActivityManager] handles the Activity stack:
+		- [code]FLAG_SINGLE_TOP[/code] (1): reuse top Activity if it has the same action
+		- [code]FLAG_CLEAR_TOP[/code] (2): clear activities above the matching one, then reuse it
+		- [code]FLAG_NO_HISTORY[/code] (4): don't keep the new Activity in the back stack
+		- [code]FLAG_REORDER_TO_FRONT[/code] (8): bring existing Activity to the top without destroying
+		- [code]FLAG_NEW_CLEAR[/code] (16): clear the entire stack before starting
+
+		Flags can be combined with bitwise OR: [code]intent.set_flag(Intent.FLAG_SINGLE_TOP); intent.set_flag(Intent.FLAG_NO_HISTORY)[/code].
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_action" qualifiers="const">
+			<return type="String" />
+			<description>
+				Returns the action string registered with [method ActivityManager.register_activity].
+			</description>
+		</method>
+		<method name="get_data" qualifiers="const">
+			<return type="String" />
+			<description>
+				Returns the data URI string.
+			</description>
+		</method>
+		<method name="get_extras" qualifiers="const">
+			<return type="Dictionary" />
+			<description>
+				Returns the extras Dictionary. Use this for passing arbitrary parameters between Activities (e.g. [code]{"id": 42, "from": "main"}[/code]).
+			</description>
+		</method>
+		<method name="get_flags" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns the raw flags bitmask.
+			</description>
+		</method>
+		<method name="has_flag" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="flag" type="int" />
+			<description>
+				Returns [code]true[/code] if the given flag is set. Pass a [code]Flag[/code] enum constant.
+			</description>
+		</method>
+		<method name="set_action">
+			<return type="void" />
+			<param index="0" name="action" type="String" />
+			<description>
+				Sets the action string.
+			</description>
+		</method>
+		<method name="set_data">
+			<return type="void" />
+			<param index="0" name="data" type="String" />
+			<description>
+				Sets the data URI string.
+			</description>
+		</method>
+		<method name="set_extras">
+			<return type="void" />
+			<param index="0" name="extras" type="Dictionary" />
+			<description>
+				Sets the extras Dictionary.
+			</description>
+		</method>
+		<method name="set_flag">
+			<return type="void" />
+			<param index="0" name="flag" type="int" />
+			<description>
+				Enables a flag. Pass a [code]Flag[/code] enum constant, e.g. [code]intent.set_flag(Intent.FLAG_SINGLE_TOP)[/code].
+			</description>
+		</method>
+		<method name="set_flags">
+			<return type="void" />
+			<param index="0" name="flags" type="int" />
+			<description>
+				Sets the raw flags bitmask.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="action" type="String" setter="set_action" getter="get_action" default="&quot;&quot;">
+			The action string, matched against registered Activity scenes.
+		</member>
+		<member name="data" type="String" setter="set_data" getter="get_data" default="&quot;&quot;">
+			Data URI string.
+		</member>
+		<member name="extras" type="Dictionary" setter="set_extras" getter="get_extras" default="{}">
+			A Dictionary of extra parameters passed to the target Activity. Available in [method Activity._on_create] via [code]get_intent().extras[/code].
+		</member>
+		<member name="flags" type="int" setter="set_flags" getter="get_flags" default="0">
+			Bitmask of launch flags.
+		</member>
+	</members>
+	<constants>
+		<constant name="FLAG_SINGLE_TOP" value="1" enum="Flag">
+			Reuse the top Activity if it has the same action — calls [method Activity._on_new_intent].
+		</constant>
+		<constant name="FLAG_CLEAR_TOP" value="2" enum="Flag">
+			Pop everything above the matching Activity, then reuse it.
+		</constant>
+		<constant name="FLAG_NO_HISTORY" value="4" enum="Flag">
+			The new Activity is not kept in the back stack; it is destroyed when navigated away from.
+		</constant>
+		<constant name="FLAG_REORDER_TO_FRONT" value="8" enum="Flag">
+			If the Activity exists in the stack, bring it to the top without destroying anything else.
+		</constant>
+		<constant name="FLAG_NEW_CLEAR" value="16" enum="Flag">
+			Clear the entire back stack and all dialogs before starting this Activity.
+		</constant>
+	</constants>
+</class>

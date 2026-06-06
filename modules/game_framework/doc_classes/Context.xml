@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="Context" inherits="Object" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Unified access point for Application-wide services.
+	</brief_description>
+	<description>
+		Android-style Context. All game_framework components that need access to shared services (Activity, Dialog, Application) go through a Context. The Context delegates to the managers owned by [Application].
+
+		Context also provides static shortcuts for [BindingEngine] (MVVM) and [Toast] factory.
+
+		Most users interact with Context through [Activity] or [Dialog] convenience methods, or by calling [code]get_context().xxx()[/code] directly.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="back">
+			<return type="bool" />
+			<description>
+				Triggers the system back gesture. Calls [method Activity._on_back_pressed] on the top Activity; if not consumed, finishes it. Returns [code]false[/code] if the stack is empty.
+			</description>
+		</method>
+		<method name="bind" qualifiers="static">
+			<return type="void" />
+			<param index="0" name="view" type="Node" />
+			<param index="1" name="vm" type="ViewModel" />
+			<description>
+				Scans [param view] node's [code]"bindings"[/code] / [code]"commands"[/code] metadata and calls [method bind_property] / [method bind_command] accordingly. Delegates to [BindingEngine].
+			</description>
+		</method>
+		<method name="bind_command" qualifiers="static">
+			<return type="void" />
+			<param index="0" name="source" type="Object" />
+			<param index="1" name="signal" type="StringName" />
+			<param index="2" name="vm" type="ViewModel" />
+			<param index="3" name="method" type="StringName" />
+			<description>
+				Binds a signal on [param source] to a method on [param vm]. Delegates to [BindingEngine].
+			</description>
+		</method>
+		<method name="bind_property" qualifiers="static">
+			<return type="void" />
+			<param index="0" name="target" type="Object" />
+			<param index="1" name="target_property" type="StringName" />
+			<param index="2" name="vm" type="ViewModel" />
+			<param index="3" name="source_property" type="StringName" />
+			<description>
+				Binds [param source_property] on [param vm] to [param target_property] on [param target]. Changes to the ViewModel property are pushed to the target node. Delegates to [BindingEngine].
+			</description>
+		</method>
+		<method name="dismiss_dialog">
+			<return type="void" />
+			<param index="0" name="dialog" type="Dialog" />
+			<description>
+				Dismisses a specific [Dialog].
+			</description>
+		</method>
+		<method name="finish_activity">
+			<return type="void" />
+			<param index="0" name="activity" type="Activity" />
+			<description>
+				Finishes (destroys) a specific [Activity]. Called internally by [method Activity.finish].
+			</description>
+		</method>
+		<method name="finish_top">
+			<return type="void" />
+			<description>
+				Finishes the current top Activity. Equivalent to [code]ActivityManager.finish_top()[/code].
+			</description>
+		</method>
+		<method name="get_application" qualifiers="const">
+			<return type="Application" />
+			<description>
+				Returns the [Application] this Context belongs to.
+			</description>
+		</method>
+		<method name="get_current_activity" qualifiers="const">
+			<return type="Activity" />
+			<description>
+				Returns the current top Activity, or [code]null[/code] if the stack is empty.
+			</description>
+		</method>
+		<method name="get_resource_handle" qualifiers="const">
+			<return type="ResourceHandle" />
+			<param index="0" name="path" type="String" />
+			<description>
+				Returns a [ResourceHandle] for the given path, creating one if needed. The handle tracks loading state.
+			</description>
+		</method>
+		<method name="get_service" qualifiers="const">
+			<return type="Object" />
+			<param index="0" name="name" type="StringName" />
+			<description>
+				Looks up a service by name from the [ServiceRegistry]. Returns [code]null[/code] if not found.
+			</description>
+		</method>
+		<method name="get_stack_size" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns the number of Activities in the back stack.
+			</description>
+		</method>
+		<method name="has_service" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="name" type="StringName" />
+			<description>
+				Returns [code]true[/code] if a service with the given name is registered.
+			</description>
+		</method>
+		<method name="load_resource_async">
+			<return type="void" />
+			<param index="0" name="path" type="String" />
+			<param index="1" name="callback" type="Callable" default="Callable()" />
+			<param index="2" name="priority" type="int" default="0" />
+			<description>
+				Asynchronously loads a resource. On platforms without threads (single-threaded Web export) falls back to synchronous load.
+			</description>
+		</method>
+		<method name="load_resource_sync" qualifiers="const">
+			<return type="Resource" />
+			<param index="0" name="path" type="String" />
+			<description>
+				Synchronously loads a resource and returns it immediately.
+			</description>
+		</method>
+		<method name="make_toast" qualifiers="static">
+			<return type="Toast" />
+			<param index="0" name="text" type="String" />
+			<param index="1" name="duration" type="float" default="2.0" />
+			<description>
+				Creates a new plain-text [Toast]. Equivalent to [code]Toast.make_text(text, duration)[/code].
+			</description>
+		</method>
+		<method name="register_activity">
+			<return type="void" />
+			<param index="0" name="action" type="String" />
+			<param index="1" name="scene_path" type="String" />
+			<description>
+				Registers an Activity scene for the given action string. Delegates to [method ActivityManager.register_activity].
+			</description>
+		</method>
+		<method name="show_dialog">
+			<return type="void" />
+			<param index="0" name="intent" type="Intent" />
+			<description>
+				Shows a Dialog. The Dialog's lifecycle owner defaults to the current top Activity.
+			</description>
+		</method>
+		<method name="show_dialog_with_owner">
+			<return type="void" />
+			<param index="0" name="intent" type="Intent" />
+			<param index="1" name="owner" type="Object" />
+			<description>
+				Shows a Dialog with an explicit lifecycle owner. The Dialog is auto-dismissed when [param owner] is destroyed.
+			</description>
+		</method>
+		<method name="show_toast">
+			<return type="void" />
+			<param index="0" name="toast" type="Toast" />
+			<description>
+				Enqueues a Toast for display. The Toast's lifecycle owner defaults to the current top Activity.
+			</description>
+		</method>
+		<method name="show_toast_with_owner">
+			<return type="void" />
+			<param index="0" name="toast" type="Toast" />
+			<param index="1" name="owner" type="Object" />
+			<description>
+				Enqueues a Toast with an explicit lifecycle owner. The Toast is removed from the queue when [param owner] is destroyed.
+			</description>
+		</method>
+		<method name="start_activity">
+			<return type="void" />
+			<param index="0" name="intent" type="Intent" />
+			<description>
+				Starts a new Activity based on [param intent].action. Delegates to [method ActivityManager.start_activity].
+			</description>
+		</method>
+	</methods>
+</class>

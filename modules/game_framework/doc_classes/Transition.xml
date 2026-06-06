@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="Transition" inherits="Resource" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Reusable enter/exit animation for [Activity] or [Dialog].
+	</brief_description>
+	<description>
+		Transition is a [Resource] that describes a Tween-based animation. Assign it to [member Activity.transition_in] / [member Activity.transition_out] (or the Dialog equivalents) to control how screens appear and disappear.
+
+		Supported types:
+		- [code]NONE[/code] (0): no animation
+		- [code]FADE[/code] (1): fade modulate alpha
+		- [code]SLIDE_LEFT[/code] (2): enter from right, exit to left
+		- [code]SLIDE_RIGHT[/code] (3): enter from left, exit to right
+		- [code]SLIDE_UP[/code] (4): enter from bottom, exit to top
+		- [code]SLIDE_DOWN[/code] (5): enter from top, exit to bottom
+		- [code]SCALE[/code] (6): scale + fade combination
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="play_enter">
+			<return type="Tween" />
+			<param index="0" name="node" type="Control" />
+			<description>
+				Plays the enter animation on [param node]. Returns the running [Tween], or an invalid ref if [member enter_type] is [code]NONE[/code].
+			</description>
+		</method>
+		<method name="play_exit">
+			<return type="Tween" />
+			<param index="0" name="node" type="Control" />
+			<description>
+				Plays the exit animation on [param node]. Returns the running [Tween], or an invalid ref if [member exit_type] is [code]NONE[/code].
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="duration" type="float" setter="set_duration" getter="get_duration" default="0.3">
+			Animation duration in seconds.
+		</member>
+		<member name="enter_type" type="int" setter="set_enter_type" getter="get_enter_type" default="1">
+			Enter animation type. See the [enum Type] constants.
+		</member>
+		<member name="exit_type" type="int" setter="set_exit_type" getter="get_exit_type" default="1">
+			Exit animation type. See the [enum Type] constants.
+		</member>
+	</members>
+	<constants>
+		<constant name="NONE" value="0" enum="Type">
+			No animation.
+		</constant>
+		<constant name="FADE" value="1" enum="Type">
+			Fade modulate alpha in/out.
+		</constant>
+		<constant name="SLIDE_LEFT" value="2" enum="Type">
+			Enter from right edge; exit to left edge.
+		</constant>
+		<constant name="SLIDE_RIGHT" value="3" enum="Type">
+			Enter from left edge; exit to right edge.
+		</constant>
+		<constant name="SLIDE_UP" value="4" enum="Type">
+			Enter from bottom edge; exit to top edge.
+		</constant>
+		<constant name="SLIDE_DOWN" value="5" enum="Type">
+			Enter from top edge; exit to bottom edge.
+		</constant>
+		<constant name="SCALE" value="6" enum="Type">
+			Scale + fade combination.
+		</constant>
+	</constants>
+</class>

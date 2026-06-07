@@ -68,6 +68,7 @@
 #include "scene/audio/audio_stream_player.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/check_box.h"
+#include "scene/gui/control.h"
 #include "scene/gui/panel_container.h"
 #include "scene/main/missing_node.h"
 #include "scene/main/scene_tree.h"
@@ -1342,6 +1343,44 @@ void SceneTreeDock::_tool_selected(int p_tool, bool p_confirm_override) {
 		} break;
 		case TOOL_ACCESSIBILITY_WARNINGS: {
 			scene_tree->set_accessibility_warnings(!EDITOR_GET("docks/scene_tree/accessibility_warnings"), true);
+		} break;
+		case TOOL_CLEAR_MOUSE_FILTER: {
+			if (!profile_allow_editing) {
+				break;
+			}
+			const List<Node *> selection = editor_selection->get_top_selected_node_list();
+			if (selection.is_empty()) {
+				break;
+			}
+
+			// Collect every Control in the subtrees of selected nodes.
+			struct ControlCollector {
+				static void collect(Node *p_node, List<Control *> &r_controls) {
+					Control *c = Object::cast_to<Control>(p_node);
+					if (c) {
+						r_controls.push_back(c);
+					}
+					for (int i = 0; i < p_node->get_child_count(); i++) {
+						collect(p_node->get_child(i), r_controls);
+					}
+				}
+			};
+
+			List<Control *> controls;
+			for (Node *n : selection) {
+				ControlCollector::collect(n, controls);
+			}
+			if (controls.is_empty()) {
+				break;
+			}
+
+			EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+			undo_redo->create_action(TTR("Clear Mouse Filter (Recursive)"));
+			for (Control *c : controls) {
+				undo_redo->add_do_property(c, "mouse_filter", Control::MOUSE_FILTER_IGNORE);
+				undo_redo->add_undo_property(c, "mouse_filter", c->get_mouse_filter());
+			}
+			undo_redo->commit_action();
 		} break;
 		case TOOL_SCENE_EDITABLE_CHILDREN: {
 			if (!profile_allow_editing) {
@@ -4137,6 +4176,18 @@ void SceneTreeDock::_tree_rmb(const Vector2 &p_menu_pos) {
 	menu->add_icon_item(get_editor_theme_icon(SNAME("Help")), TTR("Open Documentation"), TOOL_OPEN_DOCUMENTATION);
 
 	if (profile_allow_editing) {
+		// "Clear Mouse Filter" – visible whenever at least one selected node is a Control.
+		bool has_control = false;
+		for (Node *n : full_selection) {
+			if (Object::cast_to<Control>(n)) {
+				has_control = true;
+				break;
+			}
+		}
+		if (has_control) {
+			menu->add_separator();
+			menu->add_icon_item(get_editor_theme_icon(SNAME("GuiVisibilityHidden")), TTR("Clear Mouse Filter (Recursive)"), TOOL_CLEAR_MOUSE_FILTER);
+		}
 		menu->add_separator();
 		menu->add_icon_shortcut(get_editor_theme_icon(SNAME("Remove")), ED_GET_SHORTCUT("scene_tree/delete"), TOOL_ERASE);
 	}

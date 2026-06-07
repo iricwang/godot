@@ -2335,11 +2335,11 @@ void ThemeModern::populate_editor_styles(const Ref<EditorTheme> &p_theme, Editor
 
 		// Vertical separation between inspector areas.
 		p_theme->set_type_variation("EditorInspectorContainer", "VBoxContainer");
-		p_theme->set_constant("separation", "EditorInspectorContainer", Math::ceil(p_config.base_margin * EDSCALE));
+		p_theme->set_constant("separation", "EditorInspectorContainer", Math::ceil(p_config.base_margin * 1.5f * EDSCALE));
 
 		// Vertical separation between inspector sections.
 		p_theme->set_type_variation("EditorSectionContainer", "VBoxContainer");
-		p_theme->set_constant("separation", "EditorSectionContainer", p_config.base_margin * 0.5 * EDSCALE);
+		p_theme->set_constant("separation", "EditorSectionContainer", p_config.base_margin * EDSCALE);
 
 		// Vertical separation between inspector properties.
 		p_theme->set_type_variation("EditorPropertyContainer", "VBoxContainer");
@@ -2417,10 +2417,22 @@ void ThemeModern::populate_editor_styles(const Ref<EditorTheme> &p_theme, Editor
 #endif
 
 		// EditorInspectorCategory.
+		// Unity-like: taller header with left/right padding and a bottom separator border.
 
 		Ref<StyleBoxFlat> category_bg = p_config.base_style->duplicate();
 		category_bg->set_bg_color(p_config.surface_high_color);
-		category_bg->set_content_margin_individual(0, p_config.base_margin * EDSCALE, 0, p_config.base_margin * EDSCALE);
+		// Left/right padding so left-aligned icon+text has breathing room;
+		// top/bottom padding enlarged to make each component header taller.
+		category_bg->set_content_margin_individual(
+				p_config.base_margin * EDSCALE,
+				p_config.base_margin * 1.5f * EDSCALE,
+				p_config.base_margin * EDSCALE,
+				p_config.base_margin * 1.5f * EDSCALE);
+		// Always draw a subtle bottom border to separate the header from its properties.
+		category_bg->set_border_width(SIDE_BOTTOM, MAX(1, Math::round(EDSCALE)));
+		Color category_border_color = p_config.font_color;
+		category_border_color.a = 0.12;
+		category_bg->set_border_color(category_border_color);
 		if (p_config.draw_extra_borders) {
 			category_bg->set_border_width_all(1);
 			category_bg->set_border_color(p_config.extra_border_color_2);

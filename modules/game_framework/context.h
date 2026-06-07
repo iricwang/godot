@@ -3,7 +3,7 @@
 /**************************************************************************/
 #pragma once
 
-#include "core/object/object.h"
+#include "scene/main/node.h"
 
 class Application;
 class Activity;
@@ -19,11 +19,10 @@ class Toast;
 // Application extends Context and owns all plugin instances; Activity / Dialog / Toast
 // hold a Context* to reach those services through a common API.
 //
-// Godot's single-inheritance means Activity / Dialog (Control) cannot also inherit
-// Context (Object). Instead they hold a Context* via composition and re-export the
-// most-used methods — the same ContextWrapper pattern Android uses internally.
-class Context : public Object {
-	GDCLASS(Context, Object);
+// Context extends Node so that Application (and any future Context subclass) can live
+// in the scene tree and receive engine notifications directly — no proxy needed.
+class Context : public Node {
+	GDCLASS(Context, Node);
 
 	Application *app = nullptr;
 
@@ -46,6 +45,8 @@ public:
 
 	// ---- Navigation ----
 	void start_activity(const Ref<Intent> &p_intent);
+	// Convenience: build an Intent and start it in one call.
+	void start_activity_with(const String &p_action, int p_flags = 0, const Dictionary &p_extras = Dictionary());
 	void finish_activity(Activity *p_activity);
 	void finish_top();
 	bool back();

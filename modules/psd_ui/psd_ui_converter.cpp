@@ -185,7 +185,10 @@ Error PsdUiConverter::parse(const String &p_psd_path, const Options &p_options, 
 	// Third pass: recompute group-layer bounds from their direct children.
 	// psd_sdk may not populate group bounds correctly, so we derive them
 	// from the children's bounding boxes in document space.
-	for (int i = 0; i < r_layers.size(); ++i) {
+	//
+	// IMPORTANT: iterate REVERSE (bottom-up) so child group bounds are
+	// already correct when a parent group reads them.
+	for (int i = r_layers.size() - 1; i >= 0; --i) {
 		PsdLayerInfo &info = r_layers.write[i];
 		if (!info.is_group) {
 			continue;
@@ -216,11 +219,10 @@ Error PsdUiConverter::parse(const String &p_psd_path, const Options &p_options, 
 		}
 
 		if (has_child) {
-			// Expand by 1px to avoid clipping edge pixels.
-			info.left = min_left - 1;
-			info.top = min_top - 1;
-			info.right = max_right + 1;
-			info.bottom = max_bottom + 1;
+			info.left = min_left;
+			info.top = min_top;
+			info.right = max_right;
+			info.bottom = max_bottom;
 		}
 	}
 
@@ -285,7 +287,9 @@ Control *PsdUiConverter::build_scene(const Vector<PsdLayerInfo> &p_layers, const
 			Label *label = memnew(Label);
 			label->set_name(sanitize_name(info.name));
 			label->set_position(pos);
-			label->set_size(size);
+			// Label auto-sizes to its text + font; do NOT force an explicit
+			// pixel size because PSD text bounding boxes often include extra
+			// padding that would make the Label rect larger than the glyphs.
 			label->set_text(info.text);
 			if (info.font_size > 0.0) {
 				label->add_theme_font_size_override("font_size", static_cast<int>(Math::round(info.font_size)));
@@ -367,6 +371,80 @@ Control *PsdUiConverter::build_scene(const Vector<PsdLayerInfo> &p_layers, const
 		if (!attached[i]) {
 			root->add_child(node_map[i], false, Node::INTERNAL_MODE_DISABLED);
 			node_map[i]->set_owner(root);
+		}
+	}
+
+	// Phase C: recompute group container sizes from their actual children.
+	// After Phase B, every group has its children attached.  We compute the
+	// bounding box of all direct children and resize/reposition the group
+	// accordingly, so that the group always tightly encloses its contents.
+	for (int i = 0; i < count; ++i) {
+		if (!p_layers[i].is_group) {
+			continue;
+		}
+
+		HashMap<int, Node *>::Iterator git = node_map.find(i);
+		if (!git || !git->value) {
+			continue;
+		}
+		Control *group_ctrl = Object::cast_to<Control>(git->value);
+		if (!group_ctrl) {
+			continue;
+		}
+
+		float min_x = 1e9f, min_y = 1e9f;
+		float max_x = -1e9f, max_y = -1e9f;
+		bool has_child = false;
+
+		for (int j = 0; j < count; ++j) {
+			if (p_layers[j].parent_index != i) {
+				continue;
+			}
+			HashMap<int, Node *>::Iterator cit = node_map.find(j);
+			if (!cit || !cit->value) {
+				continue;
+			}
+			Control *child_ctrl = Object::cast_to<Control>(cit->value);
+			if (!child_ctrl) {
+				continue;
+			}
+
+			Vector2 cpos = child_ctrl->get_position();
+			Vector2 csize = child_ctrl->get_size();
+			// Labels auto-size based on text + font and may still report
+			// (0,0) at this point because THEME_CHANGED hasn't fired yet.
+			// Fall back to minimum size so the group bounds are correct.
+			if (csize.x <= 0 && csize.y <= 0) {
+				csize = child_ctrl->get_minimum_size();
+			}
+
+			min_x = MIN(min_x, cpos.x);
+			min_y = MIN(min_y, cpos.y);
+			max_x = MAX(max_x, cpos.x + csize.x);
+			max_y = MAX(max_y, cpos.y + csize.y);
+			has_child = true;
+		}
+
+		if (has_child) {
+			// Shift children so the group origin aligns with the top-leftmost child.
+			Vector2 offset(min_x, min_y);
+			for (int j = 0; j < count; ++j) {
+				if (p_layers[j].parent_index != i) {
+					continue;
+				}
+				HashMap<int, Node *>::Iterator cit = node_map.find(j);
+				if (!cit || !cit->value) {
+					continue;
+				}
+				Control *child_ctrl = Object::cast_to<Control>(cit->value);
+				if (!child_ctrl) {
+					continue;
+				}
+				child_ctrl->set_position(child_ctrl->get_position() - offset);
+			}
+
+			group_ctrl->set_position(group_ctrl->get_position() + offset);
+			group_ctrl->set_size(Vector2(max_x - min_x, max_y - min_y));
 		}
 	}
 

@@ -7,6 +7,7 @@
 #include "core/templates/hash_map.h"
 #include "core/templates/vector.h"
 
+#include "activity_loader.h"
 #include "intent.h"
 #include "toast.h"
 
@@ -32,6 +33,7 @@ public:
 private:
 	Control *root = nullptr; // container under which activities/dialogs/toasts are added (set by the game at startup)
 	HashMap<String, String> registry; // action -> scene path
+	Ref<ActivityLoader> loader;       // fallback resolver when action is not in registry
 	Vector<Activity *> stack;
 	Vector<Dialog *> dialogs;
 
@@ -58,6 +60,13 @@ public:
 	Control *get_root() const;
 
 	void register_activity(const String &p_action, const String &p_scene_path);
+
+	// ---- Loader ----
+	// The loader is consulted whenever an action is NOT found in the manual registry.
+	// ActivityManager ships with AutoActivityLoader pre-installed as the default.
+	void set_loader(const Ref<ActivityLoader> &p_loader);
+	Ref<ActivityLoader> get_loader() const;
+
 	void start_activity(const Ref<Intent> &p_intent);
 	void finish_activity(Activity *p_activity);
 	void finish_top();

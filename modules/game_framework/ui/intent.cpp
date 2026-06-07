@@ -46,6 +46,14 @@ bool Intent::has_flag(Flag p_flag) const {
 	return (flags & (int)p_flag) != 0;
 }
 
+Ref<Intent> Intent::create(const String &p_action, int p_flags, const Dictionary &p_extras) {
+	Ref<Intent> intent = memnew(Intent);
+	intent->action = p_action;
+	intent->flags = p_flags;
+	intent->extras = p_extras;
+	return intent;
+}
+
 void Intent::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_action", "action"), &Intent::set_action);
 	ClassDB::bind_method(D_METHOD("get_action"), &Intent::get_action);
@@ -57,6 +65,7 @@ void Intent::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_flags"), &Intent::get_flags);
 	ClassDB::bind_method(D_METHOD("set_flag", "flag"), &Intent::set_flag);
 	ClassDB::bind_method(D_METHOD("has_flag", "flag"), &Intent::has_flag);
+	ClassDB::bind_static_method("Intent", D_METHOD("create", "action", "flags", "extras"), &Intent::create, DEFVAL(0), DEFVAL(Dictionary()));
 
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "action"), "set_action", "get_action");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "data"), "set_data", "get_data");

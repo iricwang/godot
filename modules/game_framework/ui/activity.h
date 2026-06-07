@@ -71,6 +71,7 @@ public:
 
 	// ---- Convenience methods (delegate to context) ----
 	void start_activity(const Ref<Intent> &p_intent);
+	void start_activity_with(const String &p_action, int p_flags = 0, const Dictionary &p_extras = Dictionary());
 	void finish_top();
 	bool back();
 	void show_dialog(const Ref<Intent> &p_intent);

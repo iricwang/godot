@@ -12,6 +12,7 @@
 #include "core/io/resource_loader.h"
 #include "core/io/resource_saver.h"
 #include "core/object/callable_mp.h"
+#include "scene/resources/compressed_texture.h"
 #include "core/templates/hash_set.h"
 #include "editor/editor_interface.h"
 #include "editor/file_system/editor_file_system.h"
@@ -274,19 +275,19 @@ void PsdUiConvertDialog::_convert() {
 		efs->reimport_files(png_paths);
 	}
 
-	// Phase 3: load each imported texture. Referencing a res:// texture makes ResourceSaver write an [ext_resource].
-	int embedded_fallback = 0;
+	// Phase 3: load each imported texture.  If loading fails (e.g. first
+	// export before the .import files exist) we create a path-only stub so
+	// the .tscn always writes an [ext_resource] without embedding pixel data.
 	for (const KeyValue<int, String> &E : layer_png) {
 		Ref<Texture2D> tex = ResourceLoader::load(E.value, "Texture2D");
 		if (tex.is_valid()) {
 			textures[E.key] = tex;
 		} else {
-			++embedded_fallback;
-			WARN_PRINT("Could not load imported texture, embedding instead: " + E.value);
+			Ref<CompressedTexture2D> stub;
+			stub.instantiate();
+			stub->set_path(E.value, true);
+			textures[E.key] = stub;
 		}
-	}
-	if (embedded_fallback > 0) {
-		WARN_PRINT(vformat("PSD->GUI: %d layer texture(s) fell back to embedding.", embedded_fallback));
 	}
 
 	Control *root = PsdUiConverter::build_scene(layers, doc_size, options, PsdUiConverter::TEXTURE_EXTERNAL, &textures, &external_scenes);

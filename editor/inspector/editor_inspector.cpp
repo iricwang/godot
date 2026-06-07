@@ -1884,15 +1884,11 @@ void EditorInspectorCategory::_notification(int p_what) {
 			int hs = theme_cache.horizontal_separation;
 			int icon_size = theme_cache.class_icon_size;
 
-			int w = font->get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).width;
-			if (icon.is_valid()) {
-				w += hs + icon_size;
-			}
-			w = MIN(w, get_size().width - sb->get_minimum_size().width);
-
-			int ofs = (get_size().width - w) / 2;
-
 			float v_margin_offset = sb->get_content_margin(SIDE_TOP) - sb->get_content_margin(SIDE_BOTTOM);
+
+			// Unity-like: left-align icon and label instead of centering.
+			int ofs = sb->get_content_margin(SIDE_LEFT) + hs;
+			int w = get_size().width - ofs - sb->get_content_margin(SIDE_RIGHT) - hs;
 
 			if (icon.is_valid()) {
 				Size2 rect_size = Size2(icon_size, icon_size);

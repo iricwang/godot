@@ -64,6 +64,10 @@ void Context::start_activity(const Ref<Intent> &p_intent) {
 	app->get_activity_manager()->start_activity(p_intent);
 }
 
+void Context::start_activity_with(const String &p_action, int p_flags, const Dictionary &p_extras) {
+	start_activity(Intent::create(p_action, p_flags, p_extras));
+}
+
 void Context::finish_activity(Activity *p_activity) {
 	ERR_FAIL_NULL(app);
 	app->get_activity_manager()->finish_activity(p_activity);
@@ -182,6 +186,7 @@ void Context::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("load_resource_async", "path", "callback", "priority"), &Context::load_resource_async, DEFVAL(Callable()), DEFVAL(0));
 
 	ClassDB::bind_method(D_METHOD("start_activity", "intent"), &Context::start_activity);
+	ClassDB::bind_method(D_METHOD("start_activity_with", "action", "flags", "extras"), &Context::start_activity_with, DEFVAL(0), DEFVAL(Dictionary()));
 	ClassDB::bind_method(D_METHOD("finish_activity", "activity"), &Context::finish_activity);
 	ClassDB::bind_method(D_METHOD("finish_top"), &Context::finish_top);
 	ClassDB::bind_method(D_METHOD("back"), &Context::back);

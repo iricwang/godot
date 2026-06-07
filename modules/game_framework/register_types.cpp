@@ -15,7 +15,9 @@
 #include "resource/resource_manager.h"
 #include "service/service_registry.h"
 #include "ui/activity.h"
+#include "ui/activity_loader.h"
 #include "ui/activity_manager.h"
+#include "ui/auto_activity_loader.h"
 #include "ui/dialog.h"
 #include "ui/intent.h"
 #include "ui/scene_service.h"
@@ -33,6 +35,8 @@ void initialize_game_framework_module(ModuleInitializationLevel p_level) {
 
 	GDREGISTER_CLASS(Intent);
 	GDREGISTER_CLASS(Transition);
+	GDREGISTER_CLASS(ActivityLoader);
+	GDREGISTER_CLASS(AutoActivityLoader);
 	GDREGISTER_CLASS(Activity);
 	GDREGISTER_CLASS(Dialog);
 	GDREGISTER_CLASS(Toast);

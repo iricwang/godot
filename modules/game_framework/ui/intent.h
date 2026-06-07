@@ -42,6 +42,10 @@ public:
 
 	void set_flag(Flag p_flag);
 	bool has_flag(Flag p_flag) const;
+
+	// Convenience factory: build an Intent in one call.
+	// Equivalent to: var i = Intent.new(); i.action=a; i.flags=f; i.extras=e
+	static Ref<Intent> create(const String &p_action, int p_flags = 0, const Dictionary &p_extras = Dictionary());
 };
 
 VARIANT_ENUM_CAST(Intent::Flag);

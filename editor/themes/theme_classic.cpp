@@ -2106,11 +2106,11 @@ void ThemeClassic::populate_editor_styles(const Ref<EditorTheme> &p_theme, Edito
 
 		// Vertical separation between inspector areas.
 		p_theme->set_type_variation("EditorInspectorContainer", "VBoxContainer");
-		p_theme->set_constant("separation", "EditorInspectorContainer", 0);
+		p_theme->set_constant("separation", "EditorInspectorContainer", p_config.base_margin * EDSCALE);
 
 		// Vertical separation between inspector sections.
 		p_theme->set_type_variation("EditorSectionContainer", "VBoxContainer");
-		p_theme->set_constant("separation", "EditorSectionContainer", 0);
+		p_theme->set_constant("separation", "EditorSectionContainer", p_config.base_margin * EDSCALE);
 
 		// Vertical separation between inspector properties.
 		p_theme->set_type_variation("EditorPropertyContainer", "VBoxContainer");
@@ -2182,11 +2182,22 @@ void ThemeClassic::populate_editor_styles(const Ref<EditorTheme> &p_theme, Edito
 #endif
 
 		// EditorInspectorCategory.
+		// Unity-like: taller header with left/right padding and a bottom separator border.
 
 		Ref<StyleBoxFlat> category_bg = p_config.base_style->duplicate();
 		category_bg->set_bg_color(prop_category_color);
 		category_bg->set_border_color(prop_category_color);
-		category_bg->set_content_margin_all(0);
+		// Left/right padding for left-aligned icon+text; top/bottom for taller header.
+		category_bg->set_content_margin_individual(
+				p_config.base_margin * EDSCALE,
+				p_config.base_margin * 1.5f * EDSCALE,
+				p_config.base_margin * EDSCALE,
+				p_config.base_margin * 1.5f * EDSCALE);
+		// Subtle bottom border to separate the header from its properties.
+		category_bg->set_border_width(SIDE_BOTTOM, MAX(1, Math::round(EDSCALE)));
+		Color category_border_color_classic = p_config.font_color;
+		category_border_color_classic.a = 0.15;
+		category_bg->set_border_color(category_border_color_classic);
 		p_theme->set_stylebox("bg", "EditorInspectorCategory", category_bg);
 
 		// EditorInspectorArray.

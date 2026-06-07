@@ -9,7 +9,7 @@
 #include "core/io/dir_access.h"
 #include "core/io/resource_loader.h"
 #include "core/io/resource_saver.h"
-#include "editor/file_system/editor_file_system.h"
+#include "scene/resources/compressed_texture.h"
 
 String PsdUiImporter::get_importer_name() const {
 	return "psd_ui";
@@ -63,11 +63,11 @@ Error PsdUiImporter::import(ResourceUID::ID p_source_id, const String &p_source_
 		return err;
 	}
 
-	// 2) Export layer images as PNG files so the generated scene references
-	//    external textures rather than embedding ImageTexture data.
-	//    Place textures alongside the generated .tscn:  <save_path>.tscn + <save_path>_textures/
-	const String tscn_path = p_save_path + "." + get_save_extension();
-	const String tex_dir = p_save_path + "_textures";
+	// 2) Export layer images as PNGs alongside the source .psd file so they
+	//    live in normal res:// space and a reimport of the .psd will produce
+	//    [ext_resource] references instead of embedded texture data.
+	const String src_dir = p_source_file.get_base_dir();
+	const String tex_dir = src_dir.path_join(p_source_file.get_file().get_basename() + "_textures");
 
 	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_RESOURCES);
 	if (da.is_valid()) {
@@ -76,19 +76,11 @@ Error PsdUiImporter::import(ResourceUID::ID p_source_id, const String &p_source_
 
 	HashMap<int, Ref<Texture2D>> textures;
 	Vector<String> png_paths;
-	EditorFileSystem *efs = EditorFileSystem::get_singleton();
 
 	for (int i = 0; i < layers.size(); ++i) {
 		const PsdLayerInfo &info = layers[i];
 
-		// Only image layers produce textures; groups and text-as-label layers are skipped.
-		if (info.is_group) {
-			continue;
-		}
-		if (info.is_text && options.text_as_label) {
-			continue;
-		}
-		if (info.image.is_null()) {
+		if (info.is_group || (info.is_text && options.text_as_label) || info.image.is_null()) {
 			continue;
 		}
 
@@ -99,47 +91,33 @@ Error PsdUiImporter::import(ResourceUID::ID p_source_id, const String &p_source_
 			continue;
 		}
 		png_paths.push_back(png_path);
-		if (efs) {
-			efs->update_file(png_path);
-		}
-	}
 
-	// Batch-import all exported PNGs so imported textures are ready before loading.
-	if (efs && !png_paths.is_empty()) {
-		efs->reimport_files(png_paths);
-	}
-
-	// Load each imported texture.  Referencing a res:// texture makes ResourceSaver
-	// write an [ext_resource] entry instead of embedding an [sub_resource] in the .tscn.
-	int embedded_fallback = 0;
-	for (int i = 0; i < layers.size(); ++i) {
-		const PsdLayerInfo &info = layers[i];
-		if (info.is_group || info.image.is_null()) {
-			continue;
-		}
-		if (info.is_text && options.text_as_label) {
-			continue;
-		}
-
-		const String png_path = tex_dir.path_join(PsdUiConverter::sanitize_name(info.name) + "_" + itos(i) + ".png");
+		// Try loading the imported texture.  If this is a first-time import
+		// the PNG may not have a .import file yet (the import pipeline is
+		// single-threaded), so we fall back to creating a texture that
+		// references the PNG path directly.  Godot serialises a resource with
+		// a non-empty path as [ext_resource] in the .tscn, which avoids
+		// embedding the raw image data.
 		Ref<Texture2D> tex = ResourceLoader::load(png_path, "Texture2D");
 		if (tex.is_valid()) {
 			textures[i] = tex;
 		} else {
-			++embedded_fallback;
-			WARN_PRINT("psd_ui: could not load imported texture, embedding instead: " + png_path);
+			// Create a path-only stub so the .tscn writes an [ext_resource].
+			Ref<CompressedTexture2D> stub;
+			stub.instantiate();
+			stub->set_path(png_path, true);
+			textures[i] = stub;
 		}
 	}
-	if (embedded_fallback > 0) {
-		WARN_PRINT(vformat("psd_ui: %d layer texture(s) fell back to embedding.", embedded_fallback));
-	}
 
-	// Register all generated PNGs so the engine tracks them as sub-resources.
+	// Register all generated PNGs so the engine imports them in a subsequent pass.
 	if (r_gen_files) {
 		for (const String &png_path : png_paths) {
 			r_gen_files->push_back(png_path);
 		}
 	}
+
+	const String tscn_path = p_save_path + "." + get_save_extension();
 
 	// 3) Build the scene tree.  Pass external textures for every layer whose PNG was
 	//    successfully loaded; layers without an entry in the map fall back to embedding

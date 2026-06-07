@@ -102,6 +102,11 @@ void Activity::start_activity(const Ref<Intent> &p_intent) {
 	context->start_activity(p_intent);
 }
 
+void Activity::start_activity_with(const String &p_action, int p_flags, const Dictionary &p_extras) {
+	ERR_FAIL_NULL(context);
+	context->start_activity_with(p_action, p_flags, p_extras);
+}
+
 void Activity::finish_top() {
 	ERR_FAIL_NULL(context);
 	context->finish_top();
@@ -163,6 +168,7 @@ void Activity::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_context"), &Activity::get_context);
 
 	ClassDB::bind_method(D_METHOD("start_activity", "intent"), &Activity::start_activity);
+	ClassDB::bind_method(D_METHOD("start_activity_with", "action", "flags", "extras"), &Activity::start_activity_with, DEFVAL(0), DEFVAL(Dictionary()));
 	ClassDB::bind_method(D_METHOD("finish_top"), &Activity::finish_top);
 	ClassDB::bind_method(D_METHOD("back"), &Activity::back);
 	ClassDB::bind_method(D_METHOD("show_dialog", "intent"), &Activity::show_dialog);

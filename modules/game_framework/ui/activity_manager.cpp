@@ -6,6 +6,7 @@
 
 #include "../application.h"
 #include "activity.h"
+#include "auto_activity_loader.h"
 #include "dialog.h"
 #include "toast.h"
 #include "transition.h"
@@ -21,6 +22,7 @@
 #include "scene/resources/packed_scene.h"
 
 ActivityManager::ActivityManager() {
+	loader = Ref<ActivityLoader>(memnew(AutoActivityLoader));
 }
 
 ActivityManager::~ActivityManager() {
@@ -44,6 +46,14 @@ Control *ActivityManager::get_root() const {
 
 void ActivityManager::register_activity(const String &p_action, const String &p_scene_path) {
 	registry[p_action] = p_scene_path;
+}
+
+void ActivityManager::set_loader(const Ref<ActivityLoader> &p_loader) {
+	loader = p_loader;
+}
+
+Ref<ActivityLoader> ActivityManager::get_loader() const {
+	return loader;
 }
 
 void ActivityManager::_begin_exit(Activity *p_act) {
@@ -164,8 +174,19 @@ void ActivityManager::start_activity(const Ref<Intent> &p_intent) {
 		top = stack.is_empty() ? nullptr : stack[stack.size() - 1];
 	}
 
-	ERR_FAIL_COND_MSG(!registry.has(action), "No activity registered for action: " + action);
-	const String scene_path = registry[action];
+	ERR_FAIL_COND_MSG(!registry.has(action) && loader.is_null(), "No activity registered for action '" + action + "' and no loader is set.");
+
+	// Registry has priority; loader is the fallback.
+	String scene_path;
+	if (registry.has(action)) {
+		scene_path = registry[action];
+	} else {
+		scene_path = loader->resolve(action);
+		ERR_FAIL_COND_MSG(scene_path.is_empty(),
+				"ActivityLoader could not resolve action '" + action + "'. "
+				"Register it manually via register_activity(), or place a scene at e.g. res://activities/" + action + ".tscn");
+	}
+
 	Ref<PackedScene> packed = ResourceLoader::load(scene_path, "PackedScene");
 	ERR_FAIL_COND_MSG(packed.is_null(), "Failed to load activity scene: " + scene_path);
 
@@ -557,6 +578,8 @@ void ActivityManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_root", "root"), &ActivityManager::set_root);
 	ClassDB::bind_method(D_METHOD("get_root"), &ActivityManager::get_root);
 	ClassDB::bind_method(D_METHOD("register_activity", "action", "scene_path"), &ActivityManager::register_activity);
+	ClassDB::bind_method(D_METHOD("set_loader", "loader"), &ActivityManager::set_loader);
+	ClassDB::bind_method(D_METHOD("get_loader"), &ActivityManager::get_loader);
 	ClassDB::bind_method(D_METHOD("start_activity", "intent"), &ActivityManager::start_activity);
 	ClassDB::bind_method(D_METHOD("finish_activity", "activity"), &ActivityManager::finish_activity);
 	ClassDB::bind_method(D_METHOD("finish_top"), &ActivityManager::finish_top);

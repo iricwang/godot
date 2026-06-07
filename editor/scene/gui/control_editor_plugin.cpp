@@ -32,9 +32,12 @@
 
 #include "core/object/callable_mp.h"
 #include "editor/editor_node.h"
+#include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
+#include "editor/gui/editor_spin_slider.h"
 #include "editor/scene/canvas_item_editor_plugin.h"
 #include "editor/themes/editor_scale.h"
+#include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
 #include "scene/gui/check_box.h"
 #include "scene/gui/check_button.h"
@@ -446,8 +449,386 @@ EditorPropertySizeFlags::EditorPropertySizeFlags() {
 	flag_expand->connect(SceneStringName(pressed), callable_mp(this, &EditorPropertySizeFlags::_expand_toggled));
 }
 
+// ── ControlOffsetTransformDiagram ────────────────────────────────────────────
+
+Size2 ControlOffsetTransformDiagram::get_minimum_size() const {
+	return Vector2(72, 72) * EDSCALE;
+}
+
+void ControlOffsetTransformDiagram::update_values(Vector2 p_pivot_ratio, float p_rotation, bool p_visual_only) {
+	pivot_ratio = p_pivot_ratio;
+	rotation = p_rotation;
+	visual_only = p_visual_only;
+	queue_redraw();
+}
+
+void ControlOffsetTransformDiagram::_notification(int p_what) {
+	switch (p_what) {
+		case NOTIFICATION_DRAW: {
+			const Vector2 sz = get_size();
+			const float m = 6.0f * EDSCALE;
+			const Rect2 box(m, m, sz.x - 2.0f * m, sz.y - 2.0f * m);
+
+			// Background.
+			draw_rect(Rect2(Vector2(), sz), get_theme_color(SNAME("dark_color_2"), EditorStringName(Editor)));
+
+			// Box outline representing the control rect.
+			Color line_col = get_theme_color(SNAME("font_color"), EditorStringName(Editor));
+			line_col.a = 0.35f;
+			draw_rect(box, line_col, false, 1.0f);
+
+			// 3×3 grid lines — each cell is a clickable pivot preset zone.
+			for (int i = 1; i < 3; i++) {
+				const float fi = (float)i;
+				const float x = box.position.x + box.size.x * fi / 3.0f;
+				const float y = box.position.y + box.size.y * fi / 3.0f;
+				draw_line(Vector2(x, box.position.y), Vector2(x, box.position.y + box.size.y), line_col, 1.0f);
+				draw_line(Vector2(box.position.x, y), Vector2(box.position.x + box.size.x, y), line_col, 1.0f);
+			}
+
+			// Pivot dot + crosshair.
+			const Vector2 ppos = box.position + Vector2(pivot_ratio.x * box.size.x, pivot_ratio.y * box.size.y);
+			Color pivot_col = get_theme_color(SNAME("accent_color"), EditorStringName(Editor));
+			if (visual_only) {
+				pivot_col.a = 0.5f;
+			}
+			const float cr = 3.5f * EDSCALE;
+			const float arm = cr + 2.5f * EDSCALE;
+			draw_circle(ppos, cr, pivot_col);
+			draw_line(ppos - Vector2(arm, 0.0f), ppos + Vector2(arm, 0.0f), pivot_col, 1.0f);
+			draw_line(ppos - Vector2(0.0f, arm), ppos + Vector2(0.0f, arm), pivot_col, 1.0f);
+		} break;
+	}
+}
+
+void ControlOffsetTransformDiagram::gui_input(const Ref<InputEvent> &p_event) {
+	Ref<InputEventMouseButton> mb = p_event;
+	if (mb.is_valid() && mb->is_pressed() && mb->get_button_index() == MouseButton::LEFT) {
+		const float m = 6.0f * EDSCALE;
+		const Vector2 sz = get_size();
+		const Rect2 box(m, m, sz.x - 2.0f * m, sz.y - 2.0f * m);
+		const Vector2 pos = mb->get_position();
+		if (!box.has_point(pos)) {
+			return;
+		}
+		const float nx = (pos.x - box.position.x) / box.size.x;
+		const float ny = (pos.y - box.position.y) / box.size.y;
+		const int ix = CLAMP((int)(nx * 3.0f), 0, 2);
+		const int iy = CLAMP((int)(ny * 3.0f), 0, 2);
+		emit_signal("pivot_preset_selected", Vector2((float)ix * 0.5f, (float)iy * 0.5f));
+		accept_event();
+	}
+}
+
+void ControlOffsetTransformDiagram::_bind_methods() {
+	ADD_SIGNAL(MethodInfo("pivot_preset_selected", PropertyInfo(Variant::VECTOR2, "pivot")));
+}
+
+ControlOffsetTransformDiagram::ControlOffsetTransformDiagram() {
+	set_mouse_filter(MOUSE_FILTER_STOP);
+}
+
+// ── ControlOffsetTransformEditor ─────────────────────────────────────────────
+
+void ControlOffsetTransformEditor::_set_read_only(bool p_read_only) {
+	spin_pos_x->set_read_only(p_read_only);
+	spin_pos_y->set_read_only(p_read_only);
+	spin_scale_x->set_read_only(p_read_only);
+	spin_scale_y->set_read_only(p_read_only);
+	spin_rotation->set_read_only(p_read_only);
+	spin_pivot_x->set_read_only(p_read_only);
+	spin_pivot_y->set_read_only(p_read_only);
+	cb_visual_only->set_disabled(p_read_only);
+}
+
+void ControlOffsetTransformEditor::_spin_changed(double /*p_val*/, const StringName &p_prop) {
+	if (updating) {
+		return;
+	}
+	if (p_prop == SNAME("offset_transform_position")) {
+		emit_changed("offset_transform_position", Vector2((real_t)spin_pos_x->get_value(), (real_t)spin_pos_y->get_value()));
+	} else if (p_prop == SNAME("offset_transform_scale")) {
+		emit_changed("offset_transform_scale", Vector2((real_t)spin_scale_x->get_value(), (real_t)spin_scale_y->get_value()));
+	} else if (p_prop == SNAME("offset_transform_rotation")) {
+		emit_changed("offset_transform_rotation", Math::deg_to_rad(spin_rotation->get_value()));
+	} else if (p_prop == SNAME("offset_transform_pivot_ratio")) {
+		emit_changed("offset_transform_pivot_ratio", Vector2((real_t)spin_pivot_x->get_value(), (real_t)spin_pivot_y->get_value()));
+	}
+}
+
+void ControlOffsetTransformEditor::_visual_only_toggled() {
+	if (updating) {
+		return;
+	}
+	emit_changed("offset_transform_visual_only", cb_visual_only->is_pressed());
+}
+
+void ControlOffsetTransformEditor::_on_pivot_preset(Vector2 p_pivot) {
+	emit_changed("offset_transform_pivot_ratio", p_pivot);
+}
+
+void ControlOffsetTransformEditor::update_property() {
+	Object *obj = get_edited_object();
+	if (!obj) {
+		return;
+	}
+	updating = true;
+
+	const Vector2 pos = obj->get("offset_transform_position");
+	spin_pos_x->set_value_no_signal(pos.x);
+	spin_pos_y->set_value_no_signal(pos.y);
+
+	const Vector2 scale = obj->get("offset_transform_scale");
+	spin_scale_x->set_value_no_signal(scale.x);
+	spin_scale_y->set_value_no_signal(scale.y);
+
+	const double rot_rad = obj->get("offset_transform_rotation");
+	spin_rotation->set_value_no_signal(Math::rad_to_deg(rot_rad));
+
+	const Vector2 pivot = obj->get("offset_transform_pivot_ratio");
+	spin_pivot_x->set_value_no_signal(pivot.x);
+	spin_pivot_y->set_value_no_signal(pivot.y);
+
+	const bool vo = obj->get("offset_transform_visual_only");
+	cb_visual_only->set_pressed_no_signal(vo);
+
+	diagram->update_values(pivot, (float)rot_rad, vo);
+
+	updating = false;
+}
+
+void ControlOffsetTransformEditor::_bind_methods() {}
+
+ControlOffsetTransformEditor::ControlOffsetTransformEditor() {
+	// Outer layout: diagram on the left, field rows on the right.
+	HBoxContainer *outer = memnew(HBoxContainer);
+	outer->add_theme_constant_override("separation", 6);
+	add_child(outer);
+	set_bottom_editor(outer);
+
+	diagram = memnew(ControlOffsetTransformDiagram);
+	outer->add_child(diagram);
+	diagram->connect("pivot_preset_selected", callable_mp(this, &ControlOffsetTransformEditor::_on_pivot_preset));
+
+	VBoxContainer *fields = memnew(VBoxContainer);
+	fields->set_h_size_flags(SIZE_EXPAND_FILL);
+	fields->add_theme_constant_override("separation", 2);
+	outer->add_child(fields);
+
+	// Helper: create one labelled row of spin sliders.
+	const float lbl_w = 38.0f * EDSCALE;
+
+	// -- Position row --
+	{
+		HBoxContainer *row = memnew(HBoxContainer);
+		fields->add_child(row);
+		Label *lbl = memnew(Label);
+		lbl->set_text(TTR("Pos"));
+		lbl->set_custom_minimum_size(Vector2(lbl_w, 0));
+		row->add_child(lbl);
+
+		spin_pos_x = memnew(EditorSpinSlider);
+		spin_pos_x->set_label("x");
+		spin_pos_x->set_flat(true);
+		spin_pos_x->set_h_size_flags(SIZE_EXPAND_FILL);
+		spin_pos_x->set_allow_greater(true);
+		spin_pos_x->set_allow_lesser(true);
+		row->add_child(spin_pos_x);
+		add_focusable(spin_pos_x);
+		spin_pos_x->connect(SceneStringName(value_changed),
+				callable_mp(this, &ControlOffsetTransformEditor::_spin_changed).bind(StringName("offset_transform_position")));
+
+		spin_pos_y = memnew(EditorSpinSlider);
+		spin_pos_y->set_label("y");
+		spin_pos_y->set_flat(true);
+		spin_pos_y->set_h_size_flags(SIZE_EXPAND_FILL);
+		spin_pos_y->set_allow_greater(true);
+		spin_pos_y->set_allow_lesser(true);
+		row->add_child(spin_pos_y);
+		add_focusable(spin_pos_y);
+		spin_pos_y->connect(SceneStringName(value_changed),
+				callable_mp(this, &ControlOffsetTransformEditor::_spin_changed).bind(StringName("offset_transform_position")));
+	}
+
+	// -- Scale row --
+	{
+		HBoxContainer *row = memnew(HBoxContainer);
+		fields->add_child(row);
+		Label *lbl = memnew(Label);
+		lbl->set_text(TTR("Scale"));
+		lbl->set_custom_minimum_size(Vector2(lbl_w, 0));
+		row->add_child(lbl);
+
+		spin_scale_x = memnew(EditorSpinSlider);
+		spin_scale_x->set_label("x");
+		spin_scale_x->set_flat(true);
+		spin_scale_x->set_h_size_flags(SIZE_EXPAND_FILL);
+		spin_scale_x->set_allow_greater(true);
+		spin_scale_x->set_allow_lesser(true);
+		row->add_child(spin_scale_x);
+		add_focusable(spin_scale_x);
+		spin_scale_x->connect(SceneStringName(value_changed),
+				callable_mp(this, &ControlOffsetTransformEditor::_spin_changed).bind(StringName("offset_transform_scale")));
+
+		spin_scale_y = memnew(EditorSpinSlider);
+		spin_scale_y->set_label("y");
+		spin_scale_y->set_flat(true);
+		spin_scale_y->set_h_size_flags(SIZE_EXPAND_FILL);
+		spin_scale_y->set_allow_greater(true);
+		spin_scale_y->set_allow_lesser(true);
+		row->add_child(spin_scale_y);
+		add_focusable(spin_scale_y);
+		spin_scale_y->connect(SceneStringName(value_changed),
+				callable_mp(this, &ControlOffsetTransformEditor::_spin_changed).bind(StringName("offset_transform_scale")));
+	}
+
+	// -- Rotation row --
+	{
+		HBoxContainer *row = memnew(HBoxContainer);
+		fields->add_child(row);
+		Label *lbl = memnew(Label);
+		lbl->set_text(TTR("Rot"));
+		lbl->set_custom_minimum_size(Vector2(lbl_w, 0));
+		row->add_child(lbl);
+
+		spin_rotation = memnew(EditorSpinSlider);
+		spin_rotation->set_label(U"\u00b0"); // "°"
+		spin_rotation->set_suffix(U"\u00b0");
+		spin_rotation->set_flat(true);
+		spin_rotation->set_h_size_flags(SIZE_EXPAND_FILL);
+		spin_rotation->set_allow_greater(true);
+		spin_rotation->set_allow_lesser(true);
+		row->add_child(spin_rotation);
+		add_focusable(spin_rotation);
+		spin_rotation->connect(SceneStringName(value_changed),
+				callable_mp(this, &ControlOffsetTransformEditor::_spin_changed).bind(StringName("offset_transform_rotation")));
+	}
+
+	// -- Pivot row --
+	{
+		HBoxContainer *row = memnew(HBoxContainer);
+		fields->add_child(row);
+		Label *lbl = memnew(Label);
+		lbl->set_text(TTR("Pivot"));
+		lbl->set_custom_minimum_size(Vector2(lbl_w, 0));
+		row->add_child(lbl);
+
+		spin_pivot_x = memnew(EditorSpinSlider);
+		spin_pivot_x->set_label("x");
+		spin_pivot_x->set_flat(true);
+		spin_pivot_x->set_h_size_flags(SIZE_EXPAND_FILL);
+		spin_pivot_x->set_min(0.0);
+		spin_pivot_x->set_max(1.0);
+		spin_pivot_x->set_step(0.01);
+		row->add_child(spin_pivot_x);
+		add_focusable(spin_pivot_x);
+		spin_pivot_x->connect(SceneStringName(value_changed),
+				callable_mp(this, &ControlOffsetTransformEditor::_spin_changed).bind(StringName("offset_transform_pivot_ratio")));
+
+		spin_pivot_y = memnew(EditorSpinSlider);
+		spin_pivot_y->set_label("y");
+		spin_pivot_y->set_flat(true);
+		spin_pivot_y->set_h_size_flags(SIZE_EXPAND_FILL);
+		spin_pivot_y->set_min(0.0);
+		spin_pivot_y->set_max(1.0);
+		spin_pivot_y->set_step(0.01);
+		row->add_child(spin_pivot_y);
+		add_focusable(spin_pivot_y);
+		spin_pivot_y->connect(SceneStringName(value_changed),
+				callable_mp(this, &ControlOffsetTransformEditor::_spin_changed).bind(StringName("offset_transform_pivot_ratio")));
+	}
+
+	// -- Visual Only row --
+	{
+		HBoxContainer *row = memnew(HBoxContainer);
+		fields->add_child(row);
+		cb_visual_only = memnew(CheckBox);
+		cb_visual_only->set_text(TTR("Visual Only"));
+		row->add_child(cb_visual_only);
+		add_focusable(cb_visual_only);
+		cb_visual_only->connect(SceneStringName(pressed),
+				callable_mp(this, &ControlOffsetTransformEditor::_visual_only_toggled));
+	}
+}
+
+// ── EditorPropertyPivotOffsetRatio ───────────────────────────────────────────
+
+void EditorPropertyPivotOffsetRatio::_set_read_only(bool p_read_only) {
+	spin_x->set_read_only(p_read_only);
+	spin_y->set_read_only(p_read_only);
+}
+
+void EditorPropertyPivotOffsetRatio::_spin_changed(double /*p_val*/) {
+	if (updating) {
+		return;
+	}
+	emit_changed(get_edited_property(), Vector2((real_t)spin_x->get_value(), (real_t)spin_y->get_value()));
+}
+
+void EditorPropertyPivotOffsetRatio::_on_pivot_preset(Vector2 p_pivot) {
+	emit_changed(get_edited_property(), p_pivot);
+}
+
+void EditorPropertyPivotOffsetRatio::update_property() {
+	const Vector2 val = get_edited_property_value();
+	updating = true;
+	spin_x->set_value_no_signal(val.x);
+	spin_y->set_value_no_signal(val.y);
+	diagram->update_values(val, 0.0f, false);
+	updating = false;
+}
+
+void EditorPropertyPivotOffsetRatio::_bind_methods() {}
+
+EditorPropertyPivotOffsetRatio::EditorPropertyPivotOffsetRatio() {
+	HBoxContainer *hb = memnew(HBoxContainer);
+	hb->add_theme_constant_override("separation", 6);
+	add_child(hb);
+	set_bottom_editor(hb);
+
+	diagram = memnew(ControlOffsetTransformDiagram);
+	hb->add_child(diagram);
+	diagram->connect("pivot_preset_selected", callable_mp(this, &EditorPropertyPivotOffsetRatio::_on_pivot_preset));
+
+	VBoxContainer *vb = memnew(VBoxContainer);
+	vb->set_h_size_flags(SIZE_EXPAND_FILL);
+	vb->set_v_size_flags(SIZE_SHRINK_CENTER);
+	hb->add_child(vb);
+
+	HBoxContainer *row = memnew(HBoxContainer);
+	vb->add_child(row);
+
+	spin_x = memnew(EditorSpinSlider);
+	spin_x->set_label("x");
+	spin_x->set_flat(true);
+	spin_x->set_h_size_flags(SIZE_EXPAND_FILL);
+	spin_x->set_min(0.0);
+	spin_x->set_max(1.0);
+	spin_x->set_step(0.01);
+	row->add_child(spin_x);
+	add_focusable(spin_x);
+	spin_x->connect(SceneStringName(value_changed), callable_mp(this, &EditorPropertyPivotOffsetRatio::_spin_changed));
+
+	spin_y = memnew(EditorSpinSlider);
+	spin_y->set_label("y");
+	spin_y->set_flat(true);
+	spin_y->set_h_size_flags(SIZE_EXPAND_FILL);
+	spin_y->set_min(0.0);
+	spin_y->set_max(1.0);
+	spin_y->set_step(0.01);
+	row->add_child(spin_y);
+	add_focusable(spin_y);
+	spin_y->connect(SceneStringName(value_changed), callable_mp(this, &EditorPropertyPivotOffsetRatio::_spin_changed));
+}
+
+// ── EditorInspectorPluginControl ─────────────────────────────────────────────
+
 bool EditorInspectorPluginControl::can_handle(Object *p_object) {
 	return Object::cast_to<Control>(p_object) != nullptr;
+}
+
+void EditorInspectorPluginControl::parse_begin(Object *p_object) {
+	ot_editor_added = false;
 }
 
 void EditorInspectorPluginControl::parse_category(Object *p_object, const String &p_category) {
@@ -493,6 +874,30 @@ bool EditorInspectorPluginControl::parse_property(Object *p_object, const Varian
 		prop_editor->setup(options, p_path == "size_flags_vertical");
 		add_property_editor(p_path, prop_editor);
 
+		return true;
+	}
+
+	// Custom diagram+slider editor for the standard Control pivot_offset_ratio.
+	if (p_path == "pivot_offset_ratio") {
+		EditorPropertyPivotOffsetRatio *prop_editor = memnew(EditorPropertyPivotOffsetRatio);
+		add_property_editor(p_path, prop_editor);
+		return true;
+	}
+
+	// Suppress all offset_transform_* sub-properties (except the enabled toggle)
+	// and replace them with a single unified Unity RectTransform-style editor.
+	if (p_path.begins_with("offset_transform_") && p_path != "offset_transform_enabled") {
+		if (!ot_editor_added) {
+			ot_editor_added = true;
+			ControlOffsetTransformEditor *ot_editor = memnew(ControlOffsetTransformEditor);
+			Vector<String> props;
+			props.push_back("offset_transform_position");
+			props.push_back("offset_transform_scale");
+			props.push_back("offset_transform_rotation");
+			props.push_back("offset_transform_pivot_ratio");
+			props.push_back("offset_transform_visual_only");
+			add_property_editor_for_multiple_properties(TTR("Offset Transform"), props, ot_editor);
+		}
 		return true;
 	}
 

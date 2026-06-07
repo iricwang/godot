@@ -39,6 +39,7 @@
 class CheckBox;
 class CheckButton;
 class EditorSelection;
+class EditorSpinSlider;
 class GridContainer;
 class Label;
 class OptionButton;
@@ -124,13 +125,91 @@ public:
 	EditorPropertySizeFlags();
 };
 
+// ── Offset Transform visual inspector ─────────────────────────────────────────
+
+// Small 72×72 interactive pivot/rotation diagram shown on the left side of the
+// Offset Transform property panel.  Click a 3×3 zone to emit a pivot preset.
+class ControlOffsetTransformDiagram : public Control {
+	GDCLASS(ControlOffsetTransformDiagram, Control);
+
+	Vector2 pivot_ratio = Vector2(0.5f, 0.5f);
+	float rotation = 0.0f;
+	bool visual_only = false;
+
+protected:
+	void _notification(int p_what);
+	static void _bind_methods();
+	virtual void gui_input(const Ref<InputEvent> &p_event) override;
+
+public:
+	virtual Size2 get_minimum_size() const override;
+	void update_values(Vector2 p_pivot_ratio, float p_rotation, bool p_visual_only);
+
+	ControlOffsetTransformDiagram();
+};
+
+// Single-property editor for the standard Control pivot_offset_ratio:
+// reuses the 3×3 diagram for visual preset picking + two 0-1 spin sliders.
+class EditorPropertyPivotOffsetRatio : public EditorProperty {
+	GDCLASS(EditorPropertyPivotOffsetRatio, EditorProperty);
+
+	ControlOffsetTransformDiagram *diagram = nullptr;
+	EditorSpinSlider *spin_x = nullptr;
+	EditorSpinSlider *spin_y = nullptr;
+	bool updating = false;
+
+	void _spin_changed(double p_val);
+	void _on_pivot_preset(Vector2 p_pivot);
+
+protected:
+	virtual void _set_read_only(bool p_read_only) override;
+	static void _bind_methods();
+
+public:
+	virtual void update_property() override;
+	EditorPropertyPivotOffsetRatio();
+};
+
+// Unity RectTransform–style multi-property editor for all offset_transform_*
+// sub-properties.  Rendered as a single full-width panel inside the inspector.
+class ControlOffsetTransformEditor : public EditorProperty {
+	GDCLASS(ControlOffsetTransformEditor, EditorProperty);
+
+	ControlOffsetTransformDiagram *diagram = nullptr;
+
+	EditorSpinSlider *spin_pos_x = nullptr;
+	EditorSpinSlider *spin_pos_y = nullptr;
+	EditorSpinSlider *spin_scale_x = nullptr;
+	EditorSpinSlider *spin_scale_y = nullptr;
+	EditorSpinSlider *spin_rotation = nullptr;
+	EditorSpinSlider *spin_pivot_x = nullptr;
+	EditorSpinSlider *spin_pivot_y = nullptr;
+	CheckBox *cb_visual_only = nullptr;
+
+	bool updating = false;
+
+	void _spin_changed(double p_val, const StringName &p_prop);
+	void _visual_only_toggled();
+	void _on_pivot_preset(Vector2 p_pivot);
+
+protected:
+	virtual void _set_read_only(bool p_read_only) override;
+	static void _bind_methods();
+
+public:
+	virtual void update_property() override;
+	ControlOffsetTransformEditor();
+};
+
 class EditorInspectorPluginControl : public EditorInspectorPlugin {
 	GDCLASS(EditorInspectorPluginControl, EditorInspectorPlugin);
 
 	bool inside_control_category = false;
+	bool ot_editor_added = false;
 
 public:
 	virtual bool can_handle(Object *p_object) override;
+	virtual void parse_begin(Object *p_object) override;
 	virtual void parse_category(Object *p_object, const String &p_category) override;
 	virtual void parse_group(Object *p_object, const String &p_group) override;
 	virtual bool parse_property(Object *p_object, const Variant::Type p_type, const String &p_path, const PropertyHint p_hint, const String &p_hint_text, const BitField<PropertyUsageFlags> p_usage, const bool p_wide = false) override;

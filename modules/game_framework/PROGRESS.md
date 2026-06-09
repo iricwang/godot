@@ -291,14 +291,254 @@ func on_inc(): self.counter += 1   # → _get → _set → ObservableProperty �
 
 **验证**：headless 7 项全部通过，`vm.counter += 1` 无解析错误，UI 计数正确更新。
 
-### 阶段 12 — 可选增强 / 已知简化(目前的 TODO)
+### 阶段 13 — MVVM 增强功能 ✅ (已完成，2026-06-08)
+
+**目标**：解除硬编码限制，提升高级场景性能，支持值转换。
+
+**核心变更**:
+
+#### 1. BindingEngine 双向绑定信号动态注册
+
+**问题**：之前硬编码 `_two_way_signals` 数组，无法扩展自定义信号。
+
+**解决方案**：新增静态信号注册 API：
+```gdscript
+# 注册自定义双向绑定信号
+BindingEngine.register_two_way_signal("range_changed")
+
+# 取消注册
+BindingEngine.unregister_two_way_signal("range_changed")
+
+# 查询
+BindingEngine.has_two_way_signal("range_changed")  # bool
+BindingEngine.get_registered_two_way_signals()      # Array
+```
+
+**C++ API**：
+```cpp
+static void BindingEngine::register_two_way_signal(const StringName &p_signal);
+static void BindingEngine::unregister_two_way_signal(const StringName &p_signal);
+static bool BindingEngine::has_two_way_signal(const StringName &p_signal);
+static Array BindingEngine::get_registered_two_way_signals();
+```
+
+#### 2. ObservableProperty 批量更新机制
+
+**问题**：万级属性高频更新时，每次 `set_value` 触发 `value_changed` 会造成性能压力。
+
+**解决方案**：新增 `begin_bulk_update()` / `end_bulk_update()`：
+```gdscript
+# 批量更新：100次赋值 → 1次通知
+vm.begin_bulk_update()
+for i in range(100):
+    vm.counter = i
+vm.end_bulk_update()  # 只触发一次 value_changed
+```
+
+**C++ API**：
+```cpp
+void ObservableProperty::begin_bulk_update();  // 抑制中间通知
+void ObservableProperty::end_bulk_update();    // 触发最终通知
+bool is_in_bulk_update() const;                 // 查询状态
+```
+
+**ViewModel 便捷方法**：
+```gdscript
+# base_view_model.gd 新增
+func begin_bulk_update() -> void:
+    for name in get_property_names():
+        var prop = get_property(name)
+        if prop:
+            prop.begin_bulk_update()
+
+func end_bulk_update() -> void:
+    for name in get_property_names():
+        var prop = get_property(name)
+        if prop:
+            prop.end_bulk_update()
+```
+
+#### 3. ValueConverter 值转换器
+
+**问题**：无法在绑定时进行数据格式化/反格式化（如 float → "75%"）。
+
+**解决方案**：新增 `ValueConverter` 基类和内置转换器：
+```gdscript
+# 内置转换器
+IntToStringConverter      # int → "123"
+FloatToPercentConverter   # 0.75 → "75%"
+BoolToVisibilityConverter # bool → Control.PRESET_FULL_RECT / PRESET_EMPTY
+
+# 自定义转换器
+class MyConverter extends ValueConverter:
+    func convert(value) -> String:
+        return "Count: %d" % value
+    func convert_back(value) -> int:
+        return int(value.trim_prefix("Count: "))
+```
+
+**使用方式**：
+```gdscript
+# 在绑定时传入 converter
+Context.bind_property($PercentLabel, "text", vm, "progress", 1,
+    preload("res://converters/float_to_percent_converter.gd").new())
+
+# @bind_property 注解也支持 converter 参数
+@bind_property("text", "PercentLabel", 1, null, FloatToPercentConverter.new())
+```
+
+**新增文件**：
+- `mvvm/value_converter.h`
+- `mvvm/value_converter.cpp`
+- `mvvm/observable_property.cpp` — 批量更新
+- `mvvm/binding_engine.cpp` — converter 支持
+- `gf_test/core/converters/bool_to_text_converter.gd` — 示例
+- `gf_test/core/converters/float_to_percent_converter.gd` — 示例
+
+### 阶段 14 — 可选增强 / 已知简化(目前的 TODO)
 - `Activity.dispatch_create` 目前传**空 saved_state**;真正的状态保存/恢复未做(参数走 `intent.extras`)。
 - `Dialog` 的 `dismiss_on_outside` / 遮罩输入拦截**未内置**(目前由 dialog 场景自己画遮罩/处理点击)。
 - `ResourceManager.load_async` 的 `priority` 参数**当前忽略**(未接入优先级队列)。
-- `ObservableProperty` **无节流/批量更新**(变化即同步通知);万级高频更新若有压力可加批处理。
 - `Transition` 的 `CUSTOM`(自定义动画/AnimationPlayer)**未实现**(枚举里也没留,需要时加)。
 - `BindingEngine` 无显式 `unbind(view)`;靠 `vm.dispose()` + Godot 对象销毁自动断连。如需提前精确反绑定,后续补。
 - `ServiceRegistry` 存裸 `Object*`(生命周期由注册方负责);如需强引用/类型校验可增强。
+
+### 阶段 15 — @bind_signal 注解 Bug 修复 ✅ (已完成，2026-06-08)
+
+**问题**：annotation_bind demo 中 `@bind_signal("pressed")` 注解**没有生效**，按钮点击无响应。
+
+**Root Cause 1 — `_bind_commands` metadata 未设置**：
+`gdscript_compiler.cpp` 在循环中收集了 `@bind_signal` 注解到 `bind_commands` 数组，但循环结束后**只 `set_meta("_bind_configs", ...)`，遗漏了 `set_meta("_bind_commands", ...)`**。导致运行时 `apply_bindings` 拿到的 `_bind_commands` 始终为空。
+
+**Root Cause 2 — `_find_node_with_signal` 找第一个匹配就停**：
+`@bind_signal("pressed")` 会匹配 owner 子树中**第一个有 `pressed` 信号的节点**（DFS），而 CheckBox 继承自 BaseButton 也有 `pressed` 信号。如果 CheckBox 出现在按钮之前，会被错误地连上。
+
+**修复**：
+
+1. **`gdscript_compiler.cpp:3013` — 补充 `_bind_commands` set_meta**：
+```cpp
+if (!bind_configs.is_empty()) {
+    p_script->set_meta("_bind_configs", bind_configs);
+}
+if (!bind_commands.is_empty()) {
+    p_script->set_meta("_bind_commands", bind_commands);  // ← 修复
+}
+```
+
+2. **`view_model.cpp:apply_bindings` — 改为收集所有匹配节点**：
+```cpp
+// Collect all descendants with the requested signal.
+Vector<Node *> matches;
+_collect_nodes_with_signal(p_owner, signal_name, matches);
+for (Node *n : matches) {
+    BindingEngine::bind_command(n, signal_name, this, method);
+}
+```
+
+**新增 API**：`ViewModel::_collect_nodes_with_signal()` 替代旧的 `_find_node_with_signal`，递归收集所有有指定信号的节点。
+
+**验证**：Test 9 增强后断言全部通过：
+- ✅ @bind_property 初始同步 (TitleLabel.text、StatusLabel.text、ProgressBar.value、CheckBox.button_pressed)
+- ✅ @bind_property VM→View 同步 (vm.set_property 触发 UI 更新)
+- ✅ vm.on_increment/on_reset/on_check_toggled 方法通过 GDScript `_set/_get` 正确路由
+- ✅ @bind_signal 自动连接到 _btn_inc.pressed (vm.on_increment, vm.on_reset)
+- ✅ @bind_signal 自动连接到 CheckBox.toggled (vm.on_check_toggled)
+- ✅ CheckBox.toggled 实际触发 vm.on_check_toggled 修改 VM
+
+**Test 10 仍然通过**：高级 MVVM 功能（批量更新 + 值转换器 + 动态信号）不受影响。
+
+### 阶段 17 — 复杂业务场景示例集 ✅ (已完成，2026-06-08)
+
+**目标**：从"语法演示"升级到"真实业务场景"，覆盖常见 MVVM 实战模式。
+
+**新增 5 个完整示例**（位置：`modules/complex_examples/*/`）：
+
+| # | 场景 | VM 关键模式 | Activity 关键模式 |
+|---|------|------------|------------------|
+| 1 | **UserList** 列表渲染 | 集合属性（Array）作为 ObservableProperty；CRUD 命令；搜索过滤 | subscribe_property("filtered_users") 触发 `_rebuild_list` 重建 VBoxContainer 子节点 |
+| 2 | **ShoppingCart** 购物车 | 计算属性（subtotal/discount/tax/total/item_count）— 通过 `_recompute_totals()` + `begin/end_bulk_update` | CurrencyConverter、PercentageConverter 行内格式化 |
+| 3 | **RegistrationForm** 注册表单 | 实时校验（regex）+ 异步服务端校验（`await Engine.get_main_loop().process_frame` 模拟网络延迟）+ can_submit 派生属性 | 错误高亮 + submit 按钮联动 |
+| 4 | **OrderState** 订单状态机 | 有限状态机（enum + STATE_TRANSITIONS map）；按状态派生可用操作（can_pay/can_ship/...）；状态历史 audit log | 状态徽章颜色 + 操作按钮自动启用/禁用 + 历史时间线 |
+| 5 | **PlayerCard** 玩家卡片 | 嵌套数据（EquipmentItemVM 列表）；槽位装备替换；战力派生（`atk*1.5 + def*1.2 + hp/10`）；稀有度颜色 | 4 槽位槽网格 + 装备模板菜单（PopupMenu） |
+
+**新增 utility**：
+- `core/converters/currency_converter.gd` — 千分位货币格式化
+- `core/converters/percentage_converter.gd` — 百分比格式化
+
+**新增入口**：
+- `complex_examples/complex_examples_menu.gd` — 5 个示例的列表菜单
+
+**Headless 测试覆盖**（Test 11-15）：
+- ✅ Test 11 UserList：CRUD、过滤、清空
+- ✅ Test 12 ShoppingCart：计算属性、折扣码、数量改 0=删除
+- ✅ Test 13 RegistrationForm：同步校验 + 异步服务端校验 + 协议联动
+- ✅ Test 14 OrderState：状态机转换、可用操作、状态历史
+- ✅ Test 15 PlayerCard：嵌套装备、槽位替换、升级、重置
+
+**踩坑记录**（已修复）：
+1. `//` 注释在 GDScript 不支持 — 改用 `#`
+2. `checked ? a : b` 三元语法 GDScript 4 不支持 — 改用 `a if cond else b`
+3. `class_name` 是 Godot 4 关键字 — 用作变量名冲突，重命名为 `player_class`
+4. `func foo(p: str)` 错误类型 — 改用 `String`
+5. VM 继承 `RefCounted` 不是 `Node`，不能用 `get_tree()` — 用 `Engine.get_main_loop().process_frame`
+
+**验证**：Test 1-15 全部通过（除 Test 8 Activity 栈已清空问题是 demo 原本就有的）。
+
+### 阶段 16 — GDScript ValueConverter 重名警告修复 ✅ (已完成，2026-06-08)
+
+**问题**：GDScript 子类（`bool_to_text_converter.gd`、`float_to_percent_converter.gd`）定义了 `convert` / `convert_back` 方法触发 Godot 4 解析器警告：
+
+```
+ERROR: The method "convert()" overrides a method from native class "ValueConverter". 
+This won't be called by the engine and may not work as expected. (Warning treated as error.)
+```
+
+**Root Cause**：
+- Godot 4 的 GDScript **不能 override C++ 虚函数**（GDScript 端的 "override" 不会调用 C++ vtable）
+- 之前的设计是 public virtual `convert` / `convert_back` — GDScript 子类同名方法会被 Godot 误判成"override"
+
+**修复**：改为**模板方法 + 鸭子类型分派**模式
+
+1. **C++ 父类**:
+   - `convert` / `convert_back` 改为 public **非虚**模板方法
+   - 新增 protected virtual `_convert` / `_convert_back`（C++ 子类 override）
+   - `convert` 实现: 先用 `has_method("_convert")` 检查 GDScript 是否定义了钩子；若有则 `call("_convert", value)` 走 GDScript；否则调用 C++ 虚函数 `_convert`
+
+2. **C++ 内置转换器**（`IntToStringConverter` / `FloatToPercentConverter` / `BoolToTextConverter`）:
+   - 改为 override protected virtual `_convert` / `_convert_back`
+
+3. **GDScript 子类**:
+   - 方法名改为 `_convert` / `_convert_back`（带下划线前缀）
+   - 不与 C++ 父类 public 方法同名 → 无警告
+   - 通过 C++ 父类的 `has_method` 检测 + `call()` 反射调用
+
+**关键代码**:
+```cpp
+Variant ValueConverter::convert(const Variant &p_value) {
+    // GDScript 4 cannot override C++ virtuals, so we duck-type:
+    if (get_script_instance() != nullptr && has_method("_convert")) {
+        return call("_convert", p_value);
+    }
+    return _convert(p_value);
+}
+```
+
+**GDScript 用法示例**:
+```gdscript
+extends ValueConverter
+class BoolToTextConverter:
+    func _convert(value) -> String:
+        return "✓" if value else "✗"
+    func _convert_back(value) -> bool:
+        return value == "✓"
+```
+
+**验证**：Test 10 新增 GDScript 转换器断言：
+- ✅ `bool_text.convert(true) == "✓ 已启用"`
+- ✅ `float_pct_gd.convert(0.5) == "50%"`
+- ✅ `float_pct_gd.convert_back("40%") ≈ 0.4`
+
+Test 1-10 全部通过 ✅，无 GDScript parse 警告。
 
 ## 6. 构建与验证
 

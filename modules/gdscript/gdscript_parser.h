@@ -865,6 +865,8 @@ public:
 		bool is_abstract = false;
 		bool is_static = false; // For lambdas it's determined in the analyzer.
 		bool is_coroutine = false;
+		bool bind_signal = false; // Has @BindSignal annotation.
+		String bind_signal_name; // Signal name from @BindSignal("signal_name").
 		Variant rpc_config;
 		MethodInfo info;
 		LambdaNode *source_lambda = nullptr;
@@ -1271,6 +1273,10 @@ public:
 
 		bool exported = false;
 		bool onready = false;
+		bool bind_property = false; // Has @BindProperty annotation.
+		String bind_target_hint; // Target property name from @BindProperty("target_property").
+		String bind_target_node; // Node path to target UI node from @BindProperty("target_property", "target_node").
+		int bind_mode = 0; // 0: one_way, 1: two_way.
 		PropertyInfo export_info;
 		int assignments = 0;
 		bool is_static = false;
@@ -1573,6 +1579,9 @@ private:
 	bool warning_ignore_annotation(AnnotationNode *p_annotation, Node *p_target, ClassNode *p_class);
 	bool warning_ignore_region_annotations(AnnotationNode *p_annotation, Node *p_target, ClassNode *p_class);
 	bool rpc_annotation(AnnotationNode *p_annotation, Node *p_target, ClassNode *p_class);
+	// Binding annotations.
+	bool bind_property_annotation(AnnotationNode *p_annotation, Node *p_target, ClassNode *p_class);
+	bool bind_signal_annotation(AnnotationNode *p_annotation, Node *p_target, ClassNode *p_class);
 	// Statements.
 	Node *parse_statement();
 	VariableNode *parse_variable(bool p_is_static);

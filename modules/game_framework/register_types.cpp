@@ -10,6 +10,7 @@
 #include "context.h"
 #include "mvvm/binding_engine.h"
 #include "mvvm/observable_property.h"
+#include "mvvm/value_converter.h"
 #include "mvvm/view_model.h"
 #include "resource/resource_handle.h"
 #include "resource/resource_manager.h"
@@ -23,6 +24,12 @@
 #include "ui/scene_service.h"
 #include "ui/toast.h"
 #include "ui/transition.h"
+
+#ifdef TOOLS_ENABLED
+#include "editor/editor_node.h"
+#include "editor/inspector/editor_inspector.h"
+#include "editor_bind_plugin.h"
+#endif
 
 void initialize_game_framework_module(ModuleInitializationLevel p_level) {
 	if (p_level != MODULE_INITIALIZATION_LEVEL_SCENE) {
@@ -46,9 +53,18 @@ void initialize_game_framework_module(ModuleInitializationLevel p_level) {
 	GDREGISTER_CLASS(ObservableProperty);
 	GDREGISTER_CLASS(ViewModel);
 	GDREGISTER_CLASS(BindingEngine);
+	GDREGISTER_CLASS(ValueConverter);
+	GDREGISTER_CLASS(IntToStringConverter);
+	GDREGISTER_CLASS(FloatToPercentConverter);
+	GDREGISTER_CLASS(BoolToTextConverter);
 
 	GDREGISTER_CLASS(Context);
 	GDREGISTER_CLASS(Application);
+
+#ifdef TOOLS_ENABLED
+	GDREGISTER_CLASS(EditorInspectorPluginBind);
+	EditorInspector::add_inspector_plugin(Ref<EditorInspectorPluginBind>(memnew(EditorInspectorPluginBind)));
+#endif
 
 	// Application is created by the user in GDScript (var app = Application.new()).
 	// No engine-level singletons — all managers are owned by Application.

@@ -20,11 +20,11 @@ namespace stringUtil
 		char *buffer;
 		size_t n = std::wcslen(ws) * 4 + 1;
 		buffer = static_cast<char*>(memoryUtil::AllocateArray<char>(alloc,n));
-		std::memset(buffer,0,n);
 		if(buffer == nullptr)
 		{
 			return nullptr;
 		}
+		std::memset(buffer,0,n);
 		std::wcstombs(buffer,ws,n);
 		return buffer;
 	}

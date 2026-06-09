@@ -13,12 +13,19 @@
 #include "scene/resources/image_texture.h"
 #include "scene/resources/packed_scene.h"
 
+#include <climits>
 #include <string>
 
 // psd_sdk headers
 #include "Psd.h"
 #include "PsdMallocAllocator.h"
+#ifdef WINDOWS_ENABLED
 #include "PsdNativeFile.h"
+#elif defined(MACOS_ENABLED) || defined(IOS_ENABLED) || defined(VISIONOS_ENABLED)
+#include "PsdNativeFile_Mac.h"
+#else
+#include "PsdNativeFile_Linux.h"
+#endif
 #include "PsdDocument.h"
 #include "PsdColorMode.h"
 #include "PsdLayer.h"
@@ -50,8 +57,40 @@ Error PsdUiConverter::parse(const String &p_psd_path, const Options &p_options, 
 
 	// Convert Godot virtual path to absolute filesystem path for psd_sdk.
 	String abs_path = ProjectSettings::get_singleton()->globalize_path(p_psd_path);
+	std::wstring wpath;
+#ifdef WINDOWS_ENABLED
+	// On Windows, wchar_t is 16-bit and compatible with char16_t.
 	Char16String utf16_path = abs_path.utf16();
-	std::wstring wpath(reinterpret_cast<const wchar_t *>(utf16_path.get_data()));
+	wpath = std::wstring(reinterpret_cast<const wchar_t *>(utf16_path.get_data()));
+#else
+	// On Linux/macOS, wchar_t is 32-bit. Build std::wstring from UTF-8.
+	CharString utf8_path = abs_path.utf8();
+	// Simple UTF-8 → UTF-32 conversion for POSIX platforms.
+	const uint8_t *src = reinterpret_cast<const uint8_t *>(utf8_path.get_data());
+	while (*src) {
+		char32_t codepoint = 0;
+		if ((*src & 0x80) == 0) {
+			codepoint = *src++;
+		} else if ((*src & 0xE0) == 0xC0) {
+			codepoint = (static_cast<char32_t>(*src++) & 0x1F) << 6;
+			codepoint |= (static_cast<char32_t>(*src++) & 0x3F);
+		} else if ((*src & 0xF0) == 0xE0) {
+			codepoint = (static_cast<char32_t>(*src++) & 0x0F) << 12;
+			codepoint |= (static_cast<char32_t>(*src++) & 0x3F) << 6;
+			codepoint |= (static_cast<char32_t>(*src++) & 0x3F);
+		} else if ((*src & 0xF8) == 0xF0) {
+			codepoint = (static_cast<char32_t>(*src++) & 0x07) << 18;
+			codepoint |= (static_cast<char32_t>(*src++) & 0x3F) << 12;
+			codepoint |= (static_cast<char32_t>(*src++) & 0x3F) << 6;
+			codepoint |= (static_cast<char32_t>(*src++) & 0x3F);
+		} else {
+			// Invalid UTF-8 lead byte, skip.
+			++src;
+			continue;
+		}
+		wpath.push_back(static_cast<wchar_t>(codepoint));
+	}
+#endif
 
 	MallocAllocator allocator;
 	NativeFile file(&allocator);
@@ -470,11 +509,17 @@ Ref<Image> PsdUiConverter::_extract_layer_image(void *p_document, void *p_layer)
 	}
 
 	// Use layer's actual pixel dimensions for efficiency.
-	unsigned int layerWidth = static_cast<unsigned int>(layer->right - layer->left);
-	unsigned int layerHeight = static_cast<unsigned int>(layer->bottom - layer->top);
-	if (layerWidth == 0 || layerHeight == 0) {
+	const int64_t signed_layer_width = static_cast<int64_t>(layer->right) - static_cast<int64_t>(layer->left);
+	const int64_t signed_layer_height = static_cast<int64_t>(layer->bottom) - static_cast<int64_t>(layer->top);
+	if (signed_layer_width <= 0 || signed_layer_height <= 0) {
 		return Ref<Image>();
 	}
+	if (signed_layer_width > INT_MAX || signed_layer_height > INT_MAX) {
+		ERR_PRINT("PSD layer dimensions exceed supported image size.");
+		return Ref<Image>();
+	}
+	const unsigned int layerWidth = static_cast<unsigned int>(signed_layer_width);
+	const unsigned int layerHeight = static_cast<unsigned int>(signed_layer_height);
 
 	const uint8_t *srcR = static_cast<const uint8_t *>(layer->channels[indexR].data);
 	const uint8_t *srcG = static_cast<const uint8_t *>(layer->channels[indexG].data);
@@ -484,8 +529,14 @@ Ref<Image> PsdUiConverter::_extract_layer_image(void *p_document, void *p_layer)
 		srcA = static_cast<const uint8_t *>(layer->channels[indexA].data);
 	}
 
-	unsigned int pixelCount = layerWidth * layerHeight;
-	unsigned int imageSize = pixelCount * 4;
+	const uint64_t pixel_count_64 = static_cast<uint64_t>(layerWidth) * static_cast<uint64_t>(layerHeight);
+	const uint64_t image_size_64 = pixel_count_64 * 4ull;
+	if (pixel_count_64 > UINT_MAX || image_size_64 > INT_MAX) {
+		ERR_PRINT("PSD layer image data is too large to allocate safely.");
+		return Ref<Image>();
+	}
+	const unsigned int pixelCount = static_cast<unsigned int>(pixel_count_64);
+	const unsigned int imageSize = static_cast<unsigned int>(image_size_64);
 
 	uint8_t *alignedR = static_cast<uint8_t *>(Memory::alloc_aligned_static(pixelCount, 16));
 	uint8_t *alignedG = static_cast<uint8_t *>(Memory::alloc_aligned_static(pixelCount, 16));
@@ -507,6 +558,13 @@ Ref<Image> PsdUiConverter::_extract_layer_image(void *p_document, void *p_layer)
 
 	if (srcA) {
 		alignedA = static_cast<uint8_t *>(Memory::alloc_aligned_static(pixelCount, 16));
+		if (!alignedA) {
+			Memory::free_aligned_static(alignedR);
+			Memory::free_aligned_static(alignedG);
+			Memory::free_aligned_static(alignedB);
+			Memory::free_aligned_static(interleaved);
+			return Ref<Image>();
+		}
 		memcpy(alignedA, srcA, pixelCount);
 		imageUtil::InterleaveRGBA(alignedR, alignedG, alignedB, alignedA, interleaved, layerWidth, layerHeight);
 	} else {

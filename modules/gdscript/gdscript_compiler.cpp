@@ -2828,12 +2828,25 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 		p_script->rpc_config = p_script->base->rpc_config.duplicate();
 	}
 
+	Array bind_configs; // Collect @BindProperty configs for script meta.
+	Array bind_commands; // Collect @BindSignal configs for script meta.
+
 	for (int i = 0; i < p_class->members.size(); i++) {
 		const GDScriptParser::ClassNode::Member &member = p_class->members[i];
 		switch (member.type) {
 			case GDScriptParser::ClassNode::Member::VARIABLE: {
 				const GDScriptParser::VariableNode *variable = member.variable;
 				StringName name = variable->identifier->name;
+
+				// If @BindProperty has target_node arg, collect config for script metadata.
+				if (variable->bind_property && !variable->bind_target_node.is_empty()) {
+					Dictionary cfg;
+					cfg["source_prop"] = name;
+					cfg["target_node"] = NodePath(variable->bind_target_node);
+					cfg["target_prop"] = variable->bind_target_hint;
+					cfg["mode"] = variable->bind_mode;
+					bind_configs.push_back(cfg);
+				}
 
 				GDScript::MemberInfo minfo;
 				switch (variable->property) {
@@ -2855,6 +2868,16 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 							minfo.getter = "@" + variable->identifier->name + "_getter";
 						}
 						break;
+				}
+
+				// `@BindProperty` variables route reads/writes through the owner's `_set`/`_get`,
+				// only when the user hasn't declared custom setter/getter.
+				if (variable->bind_property) {
+					ERR_FAIL_COND_V_MSG(variable->property != GDScriptParser::VariableNode::PROP_NONE,
+							ERR_PARSE_ERROR,
+							vformat("Cannot use @BindProperty with custom setter/getter on '%s'.", name));
+					minfo.setter = "_set";
+					minfo.getter = "_get";
 				}
 
 				const GDScriptParser::DataType variable_type = variable->get_datatype();
@@ -2970,10 +2993,25 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 				if (config.get_type() != Variant::NIL) {
 					p_script->rpc_config[function_n->identifier->name] = config;
 				}
+
+				// Collect @BindSignal metadata.
+				if (function_n->bind_signal) {
+					Dictionary cmd;
+					cmd["signal"] = function_n->bind_signal_name;
+					cmd["method"] = function_n->identifier->name;
+					bind_commands.push_back(cmd);
+				}
 			} break;
 			default:
 				break; // Nothing to do here.
 		}
+	}
+
+	if (!bind_configs.is_empty()) {
+		p_script->set_meta("_bind_configs", bind_configs);
+	}
+	if (!bind_commands.is_empty()) {
+		p_script->set_meta("_bind_commands", bind_commands);
 	}
 
 	p_script->static_variables.resize(p_script->static_variables_indices.size());

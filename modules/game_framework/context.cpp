@@ -6,6 +6,7 @@
 
 #include "application.h"
 #include "mvvm/binding_engine.h"
+#include "mvvm/value_converter.h"
 #include "mvvm/view_model.h"
 #include "resource/resource_handle.h"
 #include "resource/resource_manager.h"
@@ -160,8 +161,8 @@ void Context::bind(Node *p_view, ViewModel *p_vm) {
 	BindingEngine::bind(p_view, p_vm);
 }
 
-void Context::bind_property(Object *p_target, const StringName &p_target_property, ViewModel *p_vm, const StringName &p_source_property) {
-	BindingEngine::bind_property(p_target, p_target_property, p_vm, p_source_property);
+void Context::bind_property(Object *p_target, const StringName &p_target_property, ViewModel *p_vm, const StringName &p_source_property, int p_mode, const Ref<ValueConverter> &p_converter) {
+	BindingEngine::bind_property(p_target, p_target_property, p_vm, p_source_property, p_mode, p_converter);
 }
 
 void Context::bind_command(Object *p_source, const StringName &p_signal, ViewModel *p_vm, const StringName &p_method) {
@@ -208,7 +209,8 @@ void Context::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_current_scene"), &Context::get_current_scene);
 
 	ClassDB::bind_static_method("Context", D_METHOD("bind", "view", "vm"), &Context::bind);
-	ClassDB::bind_static_method("Context", D_METHOD("bind_property", "target", "target_property", "vm", "source_property"), &Context::bind_property);
+	// converter: Variant default (nil-Ref) to keep GDScript binding compatible.
+	ClassDB::bind_static_method("Context", D_METHOD("bind_property", "target", "target_property", "vm", "source_property", "mode", "converter"), &Context::bind_property, DEFVAL(0), DEFVAL(Variant()));
 	ClassDB::bind_static_method("Context", D_METHOD("bind_command", "source", "signal", "vm", "method"), &Context::bind_command);
 	ClassDB::bind_static_method("Context", D_METHOD("make_toast", "text", "duration"), &Context::make_toast, DEFVAL(2.0));
 }

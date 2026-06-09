@@ -10,7 +10,6 @@
 
 #pragma once
 
-#include <Foundation/Foundation.h>
 #include "PsdFile.h"
 
 
@@ -38,7 +37,7 @@ private:
 
 	virtual uint64_t DoGetSize(void) const PSD_OVERRIDE;
 
-    dispatch_fd_t m_fileDescriptor;
+	int m_fileDescriptor;
 };
 
 PSD_NAMESPACE_END

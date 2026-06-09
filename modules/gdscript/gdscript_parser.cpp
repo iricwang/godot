@@ -182,6 +182,9 @@ GDScriptParser::GDScriptParser() {
 		register_annotation(MethodInfo("@warning_ignore", PropertyInfo(Variant::STRING, "warning")), AnnotationInfo::CLASS_LEVEL | AnnotationInfo::STATEMENT, &GDScriptParser::warning_ignore_annotation, varray(), true);
 		register_annotation(MethodInfo("@warning_ignore_start", PropertyInfo(Variant::STRING, "warning")), AnnotationInfo::STANDALONE, &GDScriptParser::warning_ignore_region_annotations, varray(), true);
 		register_annotation(MethodInfo("@warning_ignore_restore", PropertyInfo(Variant::STRING, "warning")), AnnotationInfo::STANDALONE, &GDScriptParser::warning_ignore_region_annotations, varray(), true);
+		// Binding annotations.
+		register_annotation(MethodInfo("@bind_property", PropertyInfo(Variant::STRING, "target_property"), PropertyInfo(Variant::STRING, "target_node"), PropertyInfo(Variant::INT, "mode")), AnnotationInfo::VARIABLE, &GDScriptParser::bind_property_annotation, varray("", "", 0));
+		register_annotation(MethodInfo("@bind_signal", PropertyInfo(Variant::STRING, "signal_name")), AnnotationInfo::FUNCTION, &GDScriptParser::bind_signal_annotation);
 		// Networking.
 		// Keep in sync with `rpc_annotation()` and `SceneRPCInterface::_parse_rpc_config()`.
 		register_annotation(MethodInfo("@rpc", PropertyInfo(Variant::STRING, "mode"), PropertyInfo(Variant::STRING, "sync"), PropertyInfo(Variant::STRING, "transfer_mode"), PropertyInfo(Variant::INT, "transfer_channel")), AnnotationInfo::FUNCTION, &GDScriptParser::rpc_annotation, varray("authority", "call_remote", "reliable", 0));
@@ -4543,6 +4546,70 @@ bool GDScriptParser::onready_annotation(AnnotationNode *p_annotation, Node *p_ta
 	}
 	variable->onready = true;
 	current_class->onready_used = true;
+	return true;
+}
+
+bool GDScriptParser::bind_property_annotation(AnnotationNode *p_annotation, Node *p_target, ClassNode *p_class) {
+	ERR_FAIL_COND_V_MSG(p_target->type != Node::VARIABLE, false, R"("@BindProperty" annotation can only be applied to class variables.)");
+
+	if (current_class && !ClassDB::is_parent_class(current_class->get_datatype().native_type, SNAME("ViewModel"))) {
+		push_error(R"("@BindProperty" can only be used in classes that inherit "ViewModel".)", p_annotation);
+		return false;
+	}
+
+	VariableNode *variable = static_cast<VariableNode *>(p_target);
+	if (variable->is_static) {
+		push_error(R"("@BindProperty" annotation cannot be applied to a static variable.)", p_annotation);
+		return false;
+	}
+	if (variable->bind_property) {
+		push_error(R"("@BindProperty" annotation can only be used once per variable.)", p_annotation);
+		return false;
+	}
+	if (variable->exported) {
+		push_error(R"("@BindProperty" annotation cannot be used with "@export" on the same variable.)", p_annotation);
+		return false;
+	}
+	if (variable->property != VariableNode::PROP_NONE) {
+		push_error(R"("@BindProperty" annotation cannot be used with setter/getter on the same variable.)", p_annotation);
+		return false;
+	}
+
+	variable->bind_property = true;
+	variable->bind_target_hint = p_annotation->resolved_arguments.size() > 0 ? String(p_annotation->resolved_arguments[0]) : "";
+	variable->bind_target_node = p_annotation->resolved_arguments.size() > 1 ? String(p_annotation->resolved_arguments[1]) : "";
+	variable->bind_mode = p_annotation->resolved_arguments.size() > 2 ? int(p_annotation->resolved_arguments[2]) : 0;
+
+	// Mark the variable as exported so it appears in the inspector for binding configuration.
+	variable->exported = true;
+	variable->export_info.hint = PROPERTY_HINT_BIND_PROPERTY;
+	variable->export_info.hint_string = variable->bind_target_hint;
+	variable->export_info.usage |= PROPERTY_USAGE_SCRIPT_VARIABLE;
+
+	return true;
+}
+
+bool GDScriptParser::bind_signal_annotation(AnnotationNode *p_annotation, Node *p_target, ClassNode *p_class) {
+	ERR_FAIL_COND_V_MSG(p_target->type != Node::FUNCTION, false, R"("@BindSignal" annotation can only be applied to functions.)");
+
+	if (current_class && !ClassDB::is_parent_class(current_class->get_datatype().native_type, SNAME("ViewModel"))) {
+		push_error(R"("@BindSignal" can only be used in classes that inherit "ViewModel".)", p_annotation);
+		return false;
+	}
+
+	FunctionNode *function = static_cast<FunctionNode *>(p_target);
+	if (function->is_static) {
+		push_error(R"("@BindSignal" annotation cannot be applied to a static function.)", p_annotation);
+		return false;
+	}
+	if (function->bind_signal) {
+		push_error(R"("@BindSignal" annotation can only be used once per function.)", p_annotation);
+		return false;
+	}
+
+	function->bind_signal = true;
+	function->bind_signal_name = p_annotation->resolved_arguments.size() > 0 ? String(p_annotation->resolved_arguments[0]) : "";
+
 	return true;
 }
 

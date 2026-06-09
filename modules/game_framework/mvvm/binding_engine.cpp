@@ -6,6 +6,7 @@
 
 #include "observable_property.h"
 #include "view_model.h"
+#include "value_converter.h"
 
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
@@ -20,7 +21,89 @@ void BindingEngine::_apply_to_target(const Variant &p_value, ObjectID p_target, 
 	}
 }
 
-void BindingEngine::bind_property(Object *p_target, const StringName &p_target_property, ViewModel *p_vm, const StringName &p_source_property) {
+void BindingEngine::_apply_to_view_model(const Variant &p_value, ObjectID p_vm_id, const StringName &p_source_property, const Variant &p_converter) {
+	Object *obj = ObjectDB::get_instance(p_vm_id);
+	ViewModel *vm = Object::cast_to<ViewModel>(obj);
+	if (vm) {
+		Variant converted = p_value;
+		if (p_converter.get_type() == Variant::OBJECT) {
+			Ref<ValueConverter> conv = p_converter;
+			if (conv.is_valid()) {
+				converted = conv->convert_back(p_value);
+			}
+		}
+		vm->set_property(p_source_property, converted);
+	}
+}
+
+// Default signal names for two-way binding on common Control types.
+List<StringName> BindingEngine::_two_way_signals;
+
+void BindingEngine::_bind_methods() {
+	ClassDB::bind_static_method("BindingEngine", D_METHOD("register_two_way_signal", "signal"), &BindingEngine::register_two_way_signal);
+	ClassDB::bind_static_method("BindingEngine", D_METHOD("unregister_two_way_signal", "signal"), &BindingEngine::unregister_two_way_signal);
+	ClassDB::bind_static_method("BindingEngine", D_METHOD("has_two_way_signal", "signal"), &BindingEngine::has_two_way_signal);
+	ClassDB::bind_static_method("BindingEngine", D_METHOD("get_registered_two_way_signals"), &BindingEngine::get_registered_two_way_signals);
+
+	ClassDB::bind_static_method("BindingEngine", D_METHOD("bind", "view", "view_model"), &BindingEngine::bind);
+	// DEFVAL(0) covers mode; converter has no C++ default in DEFVAL since it's a typed Ref arg,
+	// so we provide a nil-Ref default at the call site via the static overload below.
+	ClassDB::bind_static_method("BindingEngine", D_METHOD("bind_property", "target", "target_property", "view_model", "source_property", "mode", "converter"), &BindingEngine::bind_property, DEFVAL(0), DEFVAL(Variant()));
+	ClassDB::bind_static_method("BindingEngine", D_METHOD("bind_command", "source", "signal", "view_model", "method"), &BindingEngine::bind_command);
+}
+
+// Lazy initializer: register default two-way signals on first call to _ensure_static_init().
+// Avoids static initialization order fiasco (SIOF) — static class members are
+// zero-initialized by C++ rules, but a global struct with a constructor that touches them
+// may run before the binding engine class registration completes. Lazy init sidesteps that.
+void BindingEngine::_ensure_static_init() {
+	static bool initialized = false;
+	if (initialized) {
+		return;
+	}
+	initialized = true;
+	BindingEngine::_two_way_signals.push_back("toggled");
+	BindingEngine::_two_way_signals.push_back("value_changed");
+	BindingEngine::_two_way_signals.push_back("text_changed");
+	BindingEngine::_two_way_signals.push_back("pressed");
+	BindingEngine::_two_way_signals.push_back("item_selected");
+}
+
+void BindingEngine::register_two_way_signal(const StringName &p_signal) {
+	_ensure_static_init();
+	for (const StringName &sig : _two_way_signals) {
+		if (sig == p_signal) {
+			return; // Already registered.
+		}
+	}
+	_two_way_signals.push_back(p_signal);
+}
+
+void BindingEngine::unregister_two_way_signal(const StringName &p_signal) {
+	_ensure_static_init();
+	_two_way_signals.erase(p_signal);
+}
+
+bool BindingEngine::has_two_way_signal(const StringName &p_signal) {
+	_ensure_static_init();
+	for (const StringName &sig : _two_way_signals) {
+		if (sig == p_signal) {
+			return true;
+		}
+	}
+	return false;
+}
+
+Array BindingEngine::get_registered_two_way_signals() {
+	_ensure_static_init();
+	Array result;
+	for (const StringName &sig : _two_way_signals) {
+		result.push_back(String(sig));
+	}
+	return result;
+}
+
+void BindingEngine::bind_property(Object *p_target, const StringName &p_target_property, ViewModel *p_vm, const StringName &p_source_property, int p_mode, const Ref<ValueConverter> &p_converter) {
 	ERR_FAIL_NULL(p_target);
 	ERR_FAIL_NULL(p_vm);
 
@@ -33,9 +116,38 @@ void BindingEngine::bind_property(Object *p_target, const StringName &p_target_p
 
 	Ref<ObservableProperty> prop = p_vm->get_property(p_source_property);
 
+	// Apply converter for initial sync and VM→View updates.
+	Variant display_value = prop->get_value();
+	if (p_converter.is_valid()) {
+		display_value = p_converter->convert(display_value);
+	}
+
 	// Initial sync, then keep the target updated on every change.
-	p_target->set(p_target_property, prop->get_value());
+	p_target->set(p_target_property, display_value);
 	prop->connect("value_changed", callable_mp_static(&BindingEngine::_apply_to_target).bind(p_target->get_instance_id(), p_target_property));
+
+	// Two-way binding: watch target changes and write back to ViewModel.
+	if (p_mode == 1) {
+		_ensure_static_init();
+		ObjectID vm_id = p_vm->get_instance_id();
+		// Bind the Ref<ValueConverter> as a Variant argument to the Callable. Godot's Callable
+		// keeps a strong reference to bound Variants, so the converter stays alive for as
+		// long as the connection exists. When the connection is torn down (target freed or
+		// vm.dispose), the bound Variant (and its Ref) is released automatically.
+		Variant converter_var;
+		if (p_converter.is_valid()) {
+			converter_var = Variant(p_converter);
+		}
+		for (const StringName &sig : _two_way_signals) {
+			if (p_target->has_signal(sig)) {
+				Callable cb = callable_mp_static(&BindingEngine::_apply_to_view_model).bind(vm_id, p_source_property, converter_var);
+				if (!p_target->is_connected(sig, cb)) {
+					p_target->connect(sig, cb);
+				}
+				break; // First matching signal wins.
+			}
+		}
+	}
 }
 
 void BindingEngine::bind_command(Object *p_source, const StringName &p_signal, ViewModel *p_vm, const StringName &p_method) {
@@ -64,8 +176,9 @@ void BindingEngine::_bind_recursive(Node *p_node, ViewModel *p_vm) {
 			const Dictionary d = bindings[i];
 			const StringName target_prop = d.get("target_property", StringName());
 			const StringName source_prop = d.get("source_property", StringName());
+			const int mode = d.get("mode", 0);
 			if (target_prop != StringName() && source_prop != StringName()) {
-				bind_property(p_node, target_prop, p_vm, source_prop);
+				bind_property(p_node, target_prop, p_vm, source_prop, mode);
 			}
 		}
 	}
@@ -91,10 +204,4 @@ void BindingEngine::bind(Node *p_view, ViewModel *p_vm) {
 	ERR_FAIL_NULL(p_view);
 	ERR_FAIL_NULL(p_vm);
 	_bind_recursive(p_view, p_vm);
-}
-
-void BindingEngine::_bind_methods() {
-	ClassDB::bind_static_method("BindingEngine", D_METHOD("bind", "view", "view_model"), &BindingEngine::bind);
-	ClassDB::bind_static_method("BindingEngine", D_METHOD("bind_property", "target", "target_property", "view_model", "source_property"), &BindingEngine::bind_property);
-	ClassDB::bind_static_method("BindingEngine", D_METHOD("bind_command", "source", "signal", "view_model", "method"), &BindingEngine::bind_command);
 }

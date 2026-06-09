@@ -9,6 +9,7 @@
 
 #include "observable_property.h"
 
+class Node;
 class PropertyInfo;
 
 // Base class for view models. Holds named ObservableProperty values. GDScript subclasses add business logic and
@@ -44,5 +45,19 @@ public:
 	void subscribe_property(const StringName &p_name, const Callable &p_callable);
 	PackedStringArray get_property_names() const;
 
+	// Batch update: apply begin/end_bulk_update to every existing property.
+	// C++ side iterates the internal HashMap (no GDScript bridge cost).
+	void begin_bulk_update();
+	void end_bulk_update();
+
 	void dispose(); // releases all properties (disconnecting their subscribers)
+
+	// Auto-wire @BindProperty / @BindSignal annotations by scanning properties
+	// and calling BindingEngine. p_owner is the Node that owns this ViewModel
+	// (typically the node the script is attached to).
+	void apply_bindings(Node *p_owner);
+
+private:
+	static void _find_node_with_signal(Node *p_node, const StringName &p_signal, Node **r_found);
+	static void _collect_nodes_with_signal(Node *p_node, const StringName &p_signal, Vector<Node *> &r_out);
 };

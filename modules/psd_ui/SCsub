@@ -20,7 +20,6 @@ thirdparty_sources = [
     "PsdInterleave.cpp",
     "PsdLayerCanvasCopy.cpp",
     "PsdMallocAllocator.cpp",
-    "PsdNativeFile.cpp",
     "PsdParseColorModeDataSection.cpp",
     "PsdParseDocument.cpp",
     "PsdParseImageDataSection.cpp",
@@ -41,6 +40,14 @@ env_psd_ui.Prepend(CPPPATH=[thirdparty_dir])
 env_thirdparty = env_psd_ui.Clone()
 env_thirdparty.disable_warnings()
 env_thirdparty.add_source_files(thirdparty_obj, thirdparty_sources)
+
+# Platform-specific NativeFile implementation.
+if env["platform"] == "windows":
+    env_thirdparty.add_source_files(thirdparty_obj, [thirdparty_dir + "PsdNativeFile.cpp"])
+elif env["platform"] in ["macos", "ios", "visionos"]:
+    env_thirdparty.add_source_files(thirdparty_obj, [thirdparty_dir + "PsdNativeFile_Mac.mm"])
+elif env["platform"] == "linuxbsd":
+    env_thirdparty.add_source_files(thirdparty_obj, [thirdparty_dir + "PsdNativeFile_Linux.cpp"])
 env.modules_sources += thirdparty_obj
 
 # Godot source files

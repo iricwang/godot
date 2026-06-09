@@ -82,6 +82,8 @@ enum PropertyHint {
 	PROPERTY_HINT_GROUP_ENABLE, ///< used to make the property's group checkable. Only use for boolean types.
 	PROPERTY_HINT_INPUT_NAME,
 	PROPERTY_HINT_FILE_PATH,
+	PROPERTY_HINT_BIND_PROPERTY, ///< a bind property configuration for MVVM data binding (hint_string = "target_prop|vm_prop|mode").
+	PROPERTY_HINT_BIND_SIGNAL, ///< a bind signal configuration for MVVM command binding (hint_string = "signal_name|vm_method").
 	PROPERTY_HINT_MAX,
 };
 

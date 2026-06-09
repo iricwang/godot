@@ -3,6 +3,7 @@
 /**************************************************************************/
 #pragma once
 
+#include "core/object/ref_counted.h"
 #include "scene/main/node.h"
 
 class Application;
@@ -10,6 +11,7 @@ class Activity;
 class Dialog;
 class ResourceHandle;
 class ViewModel;
+class ValueConverter;
 class Node;
 class Resource;
 class Intent;
@@ -72,7 +74,7 @@ public:
 
 	// ---- MVVM (static, delegates to BindingEngine) ----
 	static void bind(Node *p_view, ViewModel *p_vm);
-	static void bind_property(Object *p_target, const StringName &p_target_property, ViewModel *p_vm, const StringName &p_source_property);
+	static void bind_property(Object *p_target, const StringName &p_target_property, ViewModel *p_vm, const StringName &p_source_property, int p_mode = 0, const Ref<ValueConverter> &p_converter = Ref<ValueConverter>());
 	static void bind_command(Object *p_source, const StringName &p_signal, ViewModel *p_vm, const StringName &p_method);
 
 	// ---- Toast factory (static) ----

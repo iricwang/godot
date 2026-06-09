@@ -31,6 +31,7 @@
 #pragma once
 
 #include "editor/docks/editor_dock.h"
+#include "core/templates/hash_map.h"
 #include "scene/gui/popup.h"
 #include "scene/gui/split_container.h"
 
@@ -95,7 +96,10 @@ private:
 	DockSplitContainer *main_hsplit = nullptr;
 	DockSplitContainer *bottom_hsplit = nullptr;
 
-	DockTabContainer *dock_slots[EditorDock::DOCK_SLOT_MAX];
+	DockTabContainer *dock_slots[EditorDock::DOCK_SLOT_MAX] = {};
+	HashMap<int, DockTabContainer *> dynamic_dock_slots;
+	HashSet<int> dynamic_dock_slot_ids;
+	int next_dynamic_dock_slot = EditorDock::DOCK_SLOT_MAX;
 	Vector<WindowWrapper *> dock_windows;
 	LocalVector<EditorDock *> all_docks;
 	HashSet<EditorDock *> dirty_docks;
@@ -122,6 +126,15 @@ private:
 
 	void _make_dock_visible(EditorDock *p_dock, bool p_grab_focus);
 	void _move_dock(EditorDock *p_dock, Control *p_target, int p_tab_index = -1, bool p_set_current = true);
+	void _split_slot(DockTabContainer *p_target_slot, int p_zone, EditorDock *p_dock);
+	void _collapse_empty_dynamic_slot(DockTabContainer *p_slot);
+	DockTabContainer *_get_dock_slot(int p_slot) const;
+	bool _control_tree_contains_dynamic_slot(Control *p_control) const;
+	Dictionary _serialize_dynamic_split_tree(Control *p_control) const;
+	Control *_restore_dynamic_split_tree(const Dictionary &p_tree);
+	void _save_dynamic_splits_to_config(Ref<ConfigFile> p_layout, const String &p_section) const;
+	void _clear_dynamic_splits();
+	void _load_dynamic_splits_from_config(Ref<ConfigFile> p_layout, const String &p_section);
 
 	void _queue_update_tab_style(EditorDock *p_dock);
 	void _update_dirty_dock_tabs();
@@ -171,7 +184,6 @@ class DockSlotGrid : public Control {
 	int hovered_slot = -1;
 
 	Rect2 rect_cache[EditorDock::DOCK_SLOT_MAX];
-	Rect2 main_screen_rect;
 	bool rect_cache_dirty = true;
 
 	void _update_rect_cache();

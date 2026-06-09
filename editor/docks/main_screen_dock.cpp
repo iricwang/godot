@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  editor_main_screen.h                                                  */
+/*  main_screen_dock.cpp                                                  */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,72 +28,47 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#pragma once
+#include "main_screen_dock.h"
 
-#include "scene/gui/panel_container.h"
+#include "editor/plugins/editor_plugin.h"
+#include "scene/gui/control.h"
 
-#include "core/templates/hash_map.h"
+void MainScreenDock::_bind_methods() {
+}
 
-class Button;
-class ConfigFile;
-class EditorPlugin;
-class HBoxContainer;
-class MainScreenDock;
-class VBoxContainer;
+void MainScreenDock::bind_plugin(EditorPlugin *p_plugin, Control *p_root) {
+	plugin = p_plugin;
+	plugin_root = p_root;
 
-class EditorMainScreen : public PanelContainer {
-	GDCLASS(EditorMainScreen, PanelContainer);
+	if (plugin_root) {
+		if (plugin_root->get_parent()) {
+			plugin_root->get_parent()->remove_child(plugin_root);
+		}
+		add_child(plugin_root);
+		plugin_root->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		plugin_root->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	}
+}
 
-public:
-	enum EditorTable {
-		EDITOR_2D = 0,
-		EDITOR_3D,
-		EDITOR_SCRIPT,
-		EDITOR_GAME,
-		EDITOR_ASSETLIB,
-	};
+void MainScreenDock::update_layout(DockLayout p_layout) {
+	// Phase 1 stub: forward to base for GDScript virtual dispatch only.
+	EditorDock::update_layout(p_layout);
+}
 
-private:
-	VBoxContainer *main_screen_vbox = nullptr;
-	EditorPlugin *selected_plugin = nullptr;
+void MainScreenDock::save_layout_to_config(Ref<ConfigFile> &p_layout, const String &p_section) const {
+	EditorDock::save_layout_to_config(p_layout, p_section);
+}
 
-	HBoxContainer *button_hb = nullptr;
-	Vector<Button *> buttons;
-	Vector<EditorPlugin *> editor_table;
-	Vector<MainScreenDock *> dock_table;
-	HashMap<String, EditorPlugin *> main_editor_plugins;
+void MainScreenDock::load_layout_from_config(const Ref<ConfigFile> &p_layout, const String &p_section) {
+	EditorDock::load_layout_from_config(p_layout, p_section);
+}
 
-	int _get_current_main_editor() const;
-	void _dock_visibility_changed(MainScreenDock *p_dock);
-	void _set_selected_plugin(EditorPlugin *p_plugin);
-
-protected:
-	void _notification(int p_what);
-
-public:
-	void set_button_container(HBoxContainer *p_button_hb);
-
-	void save_layout_to_config(Ref<ConfigFile> p_config_file, const String &p_section) const;
-	void load_layout_from_config(Ref<ConfigFile> p_config_file, const String &p_section);
-
-	void set_button_enabled(int p_index, bool p_enabled);
-	bool is_button_enabled(int p_index) const;
-
-	void select_next();
-	void select_prev();
-	void select_by_name(const String &p_name);
-	void select(int p_index);
-	int get_selected_index() const;
-	int get_plugin_index(EditorPlugin *p_editor) const;
-	EditorPlugin *get_selected_plugin() const;
-	EditorPlugin *get_plugin_by_name(const String &p_plugin_name) const;
-	bool can_auto_switch_screens() const;
-
-	VBoxContainer *get_control() const;
-	Control *get_visible_workspace_control() const;
-
-	void add_main_plugin(EditorPlugin *p_editor);
-	void remove_main_plugin(EditorPlugin *p_editor);
-
-	EditorMainScreen();
-};
+MainScreenDock::MainScreenDock() {
+	// Main-screen docks live in the center slot by default, can also be moved to
+	// side/bottom slots or floated, and are not closable (the user always needs
+	// access to the workspaces).
+	set_default_slot(DOCK_SLOT_CENTER);
+	set_available_layouts(DOCK_LAYOUT_ALL | DOCK_LAYOUT_CENTER);
+	set_closable(false);
+	set_global(false);
+}

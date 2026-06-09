@@ -45,6 +45,7 @@ public:
 		DOCK_LAYOUT_VERTICAL = 1,
 		DOCK_LAYOUT_HORIZONTAL = 2,
 		DOCK_LAYOUT_FLOATING = 4,
+		DOCK_LAYOUT_CENTER = 8,
 		DOCK_LAYOUT_ALL = DOCK_LAYOUT_VERTICAL | DOCK_LAYOUT_HORIZONTAL | DOCK_LAYOUT_FLOATING,
 	};
 
@@ -61,6 +62,9 @@ public:
 		DOCK_SLOT_BOTTOM,
 		DOCK_SLOT_BOTTOM_L,
 		DOCK_SLOT_BOTTOM_R,
+		// Center main-viewport slot — hosts 2D / 3D / Script / Game / AssetLib workspaces.
+		// Appended after BOTTOM_R so existing dock layout indices (1..11) remain stable.
+		DOCK_SLOT_CENTER,
 		DOCK_SLOT_MAX
 	};
 

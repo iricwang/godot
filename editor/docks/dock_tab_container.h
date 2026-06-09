@@ -51,7 +51,20 @@ class EditorDockDragHint : public Control {
 	bool can_drop_dock = false;
 	bool mouse_inside = false;
 	bool mouse_inside_tabbar = false;
+	Point2 mouse_pos;
 
+	enum class DropZone {
+		CENTER,
+		LEFT,
+		RIGHT,
+		TOP,
+		BOTTOM,
+	};
+
+	DropZone _get_drop_zone(const Point2 &p_point) const;
+	EditorDock::DockLayout _get_drop_layout(DropZone p_zone) const;
+	bool _can_drop_zone(DropZone p_zone) const;
+	Rect2 _get_drop_rect(DropZone p_zone) const;
 	void _drag_move_tab(int p_from_index, int p_to_index);
 	void _drag_move_tab_from(TabBar *p_from_tabbar, int p_from_index, int p_to_index);
 
@@ -88,7 +101,7 @@ public:
 		TEXT_AND_ICON,
 	};
 
-	EditorDock::DockSlot dock_slot = EditorDock::DOCK_SLOT_NONE;
+	int dock_slot = EditorDock::DOCK_SLOT_NONE;
 	EditorDock::DockLayout layout = EditorDock::DOCK_LAYOUT_VERTICAL;
 	Rect2i grid_rect;
 
@@ -114,7 +127,7 @@ public:
 
 	static Rect2 get_default_floating_dock_rect(EditorDock *p_dock);
 
-	DockTabContainer(EditorDock::DockSlot p_slot);
+	DockTabContainer(int p_slot);
 };
 
 class SideDockTabContainer : public DockTabContainer {
@@ -123,7 +136,7 @@ class SideDockTabContainer : public DockTabContainer {
 public:
 	virtual Rect2 get_floating_dock_rect(EditorDock *p_dock) override;
 
-	SideDockTabContainer(EditorDock::DockSlot p_slot, const Rect2i &p_slot_rect);
+	SideDockTabContainer(int p_slot, const Rect2i &p_slot_rect);
 };
 
 class BottomSideDockTabContainer : public DockTabContainer {
@@ -132,5 +145,19 @@ class BottomSideDockTabContainer : public DockTabContainer {
 public:
 	virtual Rect2 get_floating_dock_rect(EditorDock *p_dock) override;
 
-	BottomSideDockTabContainer(EditorDock::DockSlot p_slot, const Rect2i &p_slot_rect);
+	BottomSideDockTabContainer(int p_slot, const Rect2i &p_slot_rect);
+};
+
+// Center main-viewport slot — hosts 2D / 3D / Script / Game / AssetLib workspaces.
+// Always expands to fill the remaining center of the editor; enforces a minimum size so
+// users can't accidentally collapse the main viewport to zero pixels when dragging tabs out.
+class CenterDockTabContainer : public DockTabContainer {
+	GDCLASS(CenterDockTabContainer, DockTabContainer);
+
+public:
+	virtual void update_visibility() override;
+	virtual bool can_switch_dock() const override;
+	virtual Rect2 get_floating_dock_rect(EditorDock *p_dock) override;
+
+	CenterDockTabContainer(int p_slot, const Rect2i &p_slot_rect);
 };

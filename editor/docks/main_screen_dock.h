@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  editor_main_screen.h                                                  */
+/*  main_screen_dock.h                                                    */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,70 +30,36 @@
 
 #pragma once
 
-#include "scene/gui/panel_container.h"
+#include "editor/docks/editor_dock.h"
 
-#include "core/templates/hash_map.h"
-
-class Button;
-class ConfigFile;
+class Control;
 class EditorPlugin;
-class HBoxContainer;
-class MainScreenDock;
-class VBoxContainer;
 
-class EditorMainScreen : public PanelContainer {
-	GDCLASS(EditorMainScreen, PanelContainer);
+// Bridge that exposes a main-screen EditorPlugin (2D / 3D / Script / Game / AssetLib)
+// as an EditorDock so it participates in EditorDockManager's drag/snap/float/layout system.
+//
+// Phase 1: skeleton only — not registered with the dock manager yet, and EditorMainScreen
+// continues to manage the five plugins via its old exclusive-button mechanism. Phase 2
+// will wire add_main_plugin to create one MainScreenDock per plugin and reparent the
+// plugin's root Control into it.
+class MainScreenDock : public EditorDock {
+	GDCLASS(MainScreenDock, EditorDock);
 
-public:
-	enum EditorTable {
-		EDITOR_2D = 0,
-		EDITOR_3D,
-		EDITOR_SCRIPT,
-		EDITOR_GAME,
-		EDITOR_ASSETLIB,
-	};
-
-private:
-	VBoxContainer *main_screen_vbox = nullptr;
-	EditorPlugin *selected_plugin = nullptr;
-
-	HBoxContainer *button_hb = nullptr;
-	Vector<Button *> buttons;
-	Vector<EditorPlugin *> editor_table;
-	Vector<MainScreenDock *> dock_table;
-	HashMap<String, EditorPlugin *> main_editor_plugins;
-
-	int _get_current_main_editor() const;
-	void _dock_visibility_changed(MainScreenDock *p_dock);
-	void _set_selected_plugin(EditorPlugin *p_plugin);
+	EditorPlugin *plugin = nullptr;
+	Control *plugin_root = nullptr;
 
 protected:
-	void _notification(int p_what);
+	static void _bind_methods();
+
+	// EditorDock overrides — Phase 1 stubs (no behavior change). Phase 2/3 will implement.
+	virtual void update_layout(DockLayout p_layout) override;
+	virtual void save_layout_to_config(Ref<ConfigFile> &p_layout, const String &p_section) const override;
+	virtual void load_layout_from_config(const Ref<ConfigFile> &p_layout, const String &p_section) override;
 
 public:
-	void set_button_container(HBoxContainer *p_button_hb);
+	void bind_plugin(EditorPlugin *p_plugin, Control *p_root);
+	EditorPlugin *get_plugin() const { return plugin; }
+	Control *get_plugin_root() const { return plugin_root; }
 
-	void save_layout_to_config(Ref<ConfigFile> p_config_file, const String &p_section) const;
-	void load_layout_from_config(Ref<ConfigFile> p_config_file, const String &p_section);
-
-	void set_button_enabled(int p_index, bool p_enabled);
-	bool is_button_enabled(int p_index) const;
-
-	void select_next();
-	void select_prev();
-	void select_by_name(const String &p_name);
-	void select(int p_index);
-	int get_selected_index() const;
-	int get_plugin_index(EditorPlugin *p_editor) const;
-	EditorPlugin *get_selected_plugin() const;
-	EditorPlugin *get_plugin_by_name(const String &p_plugin_name) const;
-	bool can_auto_switch_screens() const;
-
-	VBoxContainer *get_control() const;
-	Control *get_visible_workspace_control() const;
-
-	void add_main_plugin(EditorPlugin *p_editor);
-	void remove_main_plugin(EditorPlugin *p_editor);
-
-	EditorMainScreen();
+	MainScreenDock();
 };

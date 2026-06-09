@@ -57,6 +57,7 @@
 #include "editor/debugger/editor_debugger_node.h"
 #include "editor/debugger/script_editor_debugger.h"
 #include "editor/doc/editor_help.h"
+#include "editor/docks/dock_tab_container.h"
 #include "editor/docks/editor_dock_manager.h"
 #include "editor/docks/filesystem_dock.h"
 #include "editor/docks/groups_dock.h"
@@ -4006,7 +4007,7 @@ void EditorNode::_screenshot(bool p_use_utc) {
 }
 
 void EditorNode::_save_screenshot_with_embedded_process(int64_t p_w, int64_t p_h, const String &p_emb_path, const Rect2i &p_rect, const String &p_path) {
-	Control *main_screen_control = editor_main_screen->get_control();
+	Control *main_screen_control = editor_main_screen->get_visible_workspace_control();
 	ERR_FAIL_NULL_MSG(main_screen_control, "Cannot get the editor main screen control.");
 	Viewport *viewport = main_screen_control->get_viewport();
 	ERR_FAIL_NULL_MSG(viewport, "Cannot get a viewport from the editor main screen.");
@@ -4037,7 +4038,7 @@ void EditorNode::_save_screenshot_with_embedded_process(int64_t p_w, int64_t p_h
 }
 
 void EditorNode::_save_screenshot(const String &p_path) {
-	Control *main_screen_control = editor_main_screen->get_control();
+	Control *main_screen_control = editor_main_screen->get_visible_workspace_control();
 	ERR_FAIL_NULL_MSG(main_screen_control, "Cannot get the editor main screen control.");
 	Viewport *viewport = main_screen_control->get_viewport();
 	ERR_FAIL_NULL_MSG(viewport, "Cannot get a viewport from the editor main screen.");
@@ -4363,11 +4364,11 @@ void EditorNode::replace_resources_in_scenes(const Vector<Ref<Resource>> &p_sour
 }
 
 void EditorNode::add_editor_plugin(EditorPlugin *p_editor, bool p_config_changed) {
+	singleton->editor_data.add_editor_plugin(p_editor);
+	singleton->add_child(p_editor);
 	if (p_editor->has_main_screen()) {
 		singleton->editor_main_screen->add_main_plugin(p_editor);
 	}
-	singleton->editor_data.add_editor_plugin(p_editor);
-	singleton->add_child(p_editor);
 	if (p_config_changed) {
 		p_editor->enable_plugin();
 	}
@@ -8860,10 +8861,16 @@ EditorNode::EditorNode() {
 	distraction_free->connect(SceneStringName(pressed), callable_mp(this, &EditorNode::_toggle_distraction_free_mode));
 
 	editor_main_screen = memnew(EditorMainScreen);
-	editor_main_screen->set_custom_minimum_size(Size2(0, 80) * EDSCALE);
+	editor_main_screen->set_custom_minimum_size(Size2());
 	editor_main_screen->set_draw_behind_parent(true);
+	editor_main_screen->hide();
 	srt->add_child(editor_main_screen);
-	editor_main_screen->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+
+	DockTabContainer *center_dock_container = memnew(CenterDockTabContainer(EditorDock::DOCK_SLOT_CENTER, Rect2i(2, 0, 4, 6)));
+	center_dock_container->set_name("DockSlotCenter");
+	srt->add_child(center_dock_container);
+	center_dock_container->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	editor_dock_manager->register_dock_slot(center_dock_container);
 
 	scene_root = memnew(SubViewport);
 	scene_root->set_auto_translate_mode(AUTO_TRANSLATE_MODE_ALWAYS);

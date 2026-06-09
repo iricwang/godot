@@ -32,6 +32,9 @@
 
 #include "core/io/config_file.h"
 #include "core/object/callable_mp.h"
+#include "editor/docks/dock_tab_container.h"
+#include "editor/docks/editor_dock_manager.h"
+#include "editor/docks/main_screen_dock.h"
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
 #include "editor/plugins/editor_plugin.h"
@@ -82,13 +85,7 @@ void EditorMainScreen::set_button_container(HBoxContainer *p_button_hb) {
 }
 
 void EditorMainScreen::save_layout_to_config(Ref<ConfigFile> p_config_file, const String &p_section) const {
-	int selected_main_editor_idx = -1;
-	for (int i = 0; i < buttons.size(); i++) {
-		if (buttons[i]->is_pressed()) {
-			selected_main_editor_idx = i;
-			break;
-		}
-	}
+	int selected_main_editor_idx = get_selected_index();
 	if (selected_main_editor_idx != -1) {
 		p_config_file->set_value(p_section, "selected_main_editor_idx", selected_main_editor_idx);
 	} else {
@@ -106,8 +103,16 @@ void EditorMainScreen::load_layout_from_config(Ref<ConfigFile> p_config_file, co
 void EditorMainScreen::set_button_enabled(int p_index, bool p_enabled) {
 	ERR_FAIL_INDEX(p_index, buttons.size());
 	buttons[p_index]->set_visible(p_enabled);
+	if (p_index < dock_table.size()) {
+		EditorDockManager::get_singleton()->set_dock_enabled(dock_table[p_index], p_enabled);
+	}
 	if (!p_enabled && buttons[p_index]->is_pressed()) {
-		select(EDITOR_2D);
+		for (int i = 0; i < buttons.size(); i++) {
+			if (i != p_index && buttons[i]->is_visible()) {
+				select(i);
+				return;
+			}
+		}
 	}
 }
 
@@ -167,6 +172,46 @@ void EditorMainScreen::select_by_name(const String &p_name) {
 	ERR_FAIL_MSG("The editor name '" + p_name + "' was not found.");
 }
 
+void EditorMainScreen::_set_selected_plugin(EditorPlugin *p_plugin) {
+	ERR_FAIL_NULL(p_plugin);
+
+	bool selection_changed = selected_plugin != p_plugin;
+	selected_plugin = p_plugin;
+	selected_plugin->make_visible(true);
+	selected_plugin->selected_notify();
+	set_accessibility_name(selected_plugin->get_plugin_name());
+
+	for (int i = 0; i < buttons.size(); i++) {
+		buttons[i]->set_pressed_no_signal(editor_table[i] == selected_plugin);
+	}
+
+	if (selection_changed) {
+		EditorData &editor_data = EditorNode::get_editor_data();
+		int plugin_count = editor_data.get_editor_plugin_count();
+		for (int i = 0; i < plugin_count; i++) {
+			editor_data.get_editor_plugin(i)->notify_main_screen_changed(selected_plugin->get_plugin_name());
+		}
+
+		EditorNode::get_singleton()->update_distraction_free_mode();
+	}
+}
+
+void EditorMainScreen::_dock_visibility_changed(MainScreenDock *p_dock) {
+	ERR_FAIL_NULL(p_dock);
+	EditorPlugin *plugin = p_dock->get_plugin();
+	ERR_FAIL_NULL(plugin);
+
+	if (!p_dock->is_visible_in_tree()) {
+		plugin->make_visible(false);
+		if (selected_plugin == plugin) {
+			selected_plugin = nullptr;
+		}
+		return;
+	}
+
+	_set_selected_plugin(plugin);
+}
+
 void EditorMainScreen::select(int p_index) {
 	if (EditorNode::get_singleton()->is_changing_scene()) {
 		return;
@@ -178,33 +223,13 @@ void EditorMainScreen::select(int p_index) {
 		return;
 	}
 
-	for (int i = 0; i < buttons.size(); i++) {
-		buttons[i]->set_pressed_no_signal(i == p_index);
-	}
-
 	EditorPlugin *new_editor = editor_table[p_index];
 	ERR_FAIL_NULL(new_editor);
+	MainScreenDock *dock = dock_table[p_index];
+	ERR_FAIL_NULL(dock);
 
-	if (selected_plugin == new_editor) {
-		return;
-	}
-
-	if (selected_plugin) {
-		selected_plugin->make_visible(false);
-	}
-
-	selected_plugin = new_editor;
-	selected_plugin->make_visible(true);
-	selected_plugin->selected_notify();
-	set_accessibility_name(selected_plugin->get_plugin_name());
-
-	EditorData &editor_data = EditorNode::get_editor_data();
-	int plugin_count = editor_data.get_editor_plugin_count();
-	for (int i = 0; i < plugin_count; i++) {
-		editor_data.get_editor_plugin(i)->notify_main_screen_changed(selected_plugin->get_plugin_name());
-	}
-
-	EditorNode::get_singleton()->update_distraction_free_mode();
+	EditorDockManager::get_singleton()->focus_dock(dock);
+	_set_selected_plugin(new_editor);
 }
 
 int EditorMainScreen::get_selected_index() const {
@@ -259,6 +284,28 @@ VBoxContainer *EditorMainScreen::get_control() const {
 	return main_screen_vbox;
 }
 
+Control *EditorMainScreen::get_visible_workspace_control() const {
+	if (selected_plugin) {
+		int selected_index = get_selected_index();
+		if (selected_index >= 0 && selected_index < dock_table.size()) {
+			MainScreenDock *dock = dock_table[selected_index];
+			if (dock && dock->is_visible_in_tree()) {
+				return dock;
+			}
+			Control *plugin_root = dock ? dock->get_plugin_root() : nullptr;
+			if (plugin_root && plugin_root->is_visible_in_tree()) {
+				return plugin_root;
+			}
+		}
+	}
+	for (MainScreenDock *dock : dock_table) {
+		if (dock && dock->is_visible_in_tree()) {
+			return dock;
+		}
+	}
+	return main_screen_vbox;
+}
+
 void EditorMainScreen::add_main_plugin(EditorPlugin *p_editor) {
 	Button *tb = memnew(Button);
 	tb->set_toggle_mode(true);
@@ -281,39 +328,69 @@ void EditorMainScreen::add_main_plugin(EditorPlugin *p_editor) {
 		icon->connect_changed(callable_mp((Control *)tb, &Control::update_minimum_size));
 	}
 
-	tb->connect(SceneStringName(pressed), callable_mp(this, &EditorMainScreen::select).bind(buttons.size()));
+	const int plugin_index = buttons.size();
+	tb->connect(SceneStringName(pressed), callable_mp(this, &EditorMainScreen::select).bind(plugin_index));
+
+	Control *plugin_root = nullptr;
+	if (main_screen_vbox->get_child_count() > 0) {
+		plugin_root = Object::cast_to<Control>(main_screen_vbox->get_child(main_screen_vbox->get_child_count() - 1));
+	}
+	ERR_FAIL_NULL(plugin_root);
+
+	MainScreenDock *dock = memnew(MainScreenDock);
+	dock->set_name(p_editor->get_plugin_name() + "WorkspaceDock");
+	dock->set_title(p_editor->get_plugin_name());
+	dock->set_layout_key("workspace_" + p_editor->get_plugin_name().to_lower());
+	dock->set_dock_shortcut(shortcut);
+	if (icon.is_valid()) {
+		dock->set_dock_icon(icon);
+	}
+	dock->bind_plugin(p_editor, plugin_root);
+	dock->connect(SceneStringName(visibility_changed), callable_mp(this, &EditorMainScreen::_dock_visibility_changed).bind(dock));
 
 	buttons.push_back(tb);
 	button_hb->add_child(tb);
 	editor_table.push_back(p_editor);
+	dock_table.push_back(dock);
 	main_editor_plugins.insert(p_editor->get_plugin_name(), p_editor);
+	EditorDockManager::get_singleton()->add_dock(dock);
 }
 
 void EditorMainScreen::remove_main_plugin(EditorPlugin *p_editor) {
-	// Remove the main editor button and update the bindings of
-	// all buttons behind it to point to the correct main window.
-	for (int i = buttons.size() - 1; i >= 0; i--) {
-		if (p_editor->get_plugin_name() == buttons[i]->get_text()) {
-			if (buttons[i]->is_pressed()) {
-				select(EDITOR_SCRIPT);
-			}
+	int remove_index = get_plugin_index(p_editor);
+	ERR_FAIL_COND(remove_index == -1);
 
-			memdelete(buttons[i]);
-			buttons.remove_at(i);
+	if (buttons[remove_index]->is_pressed() && editor_table.size() > 1) {
+		select(remove_index == EDITOR_SCRIPT ? EDITOR_2D : EDITOR_SCRIPT);
+	}
 
-			break;
-		} else {
-			buttons[i]->disconnect(SceneStringName(pressed), callable_mp(this, &EditorMainScreen::select));
-			buttons[i]->connect(SceneStringName(pressed), callable_mp(this, &EditorMainScreen::select).bind(i - 1));
+	MainScreenDock *dock = dock_table[remove_index];
+	if (dock) {
+		dock->disconnect(SceneStringName(visibility_changed), callable_mp(this, &EditorMainScreen::_dock_visibility_changed).bind(dock));
+		Control *plugin_root = dock->get_plugin_root();
+		if (plugin_root && plugin_root->get_parent() == dock) {
+			dock->remove_child(plugin_root);
+			main_screen_vbox->add_child(plugin_root);
+			plugin_root->hide();
 		}
+		EditorDockManager::get_singleton()->remove_dock(dock);
+		memdelete(dock);
+	}
+
+	memdelete(buttons[remove_index]);
+	buttons.remove_at(remove_index);
+	editor_table.remove_at(remove_index);
+	dock_table.remove_at(remove_index);
+	main_editor_plugins.erase(p_editor->get_plugin_name());
+
+	for (int i = remove_index; i < buttons.size(); i++) {
+		buttons[i]->disconnect(SceneStringName(pressed), callable_mp(this, &EditorMainScreen::select));
+		buttons[i]->connect(SceneStringName(pressed), callable_mp(this, &EditorMainScreen::select).bind(i));
 	}
 
 	if (selected_plugin == p_editor) {
 		selected_plugin = nullptr;
 	}
-
-	editor_table.erase(p_editor);
-	main_editor_plugins.erase(p_editor->get_plugin_name());
 }
 
 EditorMainScreen::EditorMainScreen() {

@@ -170,7 +170,13 @@ EditorDock *EditorDockManager::_get_dock_tab_dragged() {
 		}
 
 		for (int i = 0; i < EditorDock::DOCK_SLOT_MAX; i++) {
+			if (!dock_slots[i]) {
+				continue;
+			}
 			dock_slots[i]->show_drag_hint();
+		}
+		for (const KeyValue<int, DockTabContainer *> &slot_kv : dynamic_dock_slots) {
+			slot_kv.value->show_drag_hint();
 		}
 
 		return dock_tab_dragged;
@@ -324,6 +330,118 @@ void EditorDockManager::_restore_dock_to_saved_window(EditorDock *p_dock, const 
 			p_window_dump.get("window_screen_rect", Rect2i()));
 }
 
+DockTabContainer *EditorDockManager::_get_dock_slot(int p_slot) const {
+	if (p_slot >= 0 && p_slot < EditorDock::DOCK_SLOT_MAX) {
+		return dock_slots[p_slot];
+	}
+	DockTabContainer *const *slot = dynamic_dock_slots.getptr(p_slot);
+	return slot ? *slot : nullptr;
+}
+
+void EditorDockManager::_split_slot(DockTabContainer *p_target_slot, int p_zone, EditorDock *p_dock) {
+	ERR_FAIL_NULL(p_target_slot);
+	ERR_FAIL_NULL(p_dock);
+	ERR_FAIL_COND_MSG(!all_docks.has(p_dock), vformat("Cannot split slot with unknown dock '%s'.", p_dock->get_display_title()));
+
+	Node *old_parent = p_target_slot->get_parent();
+	Control *old_parent_control = Object::cast_to<Control>(old_parent);
+	ERR_FAIL_NULL(old_parent_control);
+	DockSplitContainer *parent_split = Object::cast_to<DockSplitContainer>(old_parent);
+	if (!parent_split) {
+		const int old_index = p_target_slot->get_index(false);
+		DockSplitContainer *wrapper_split = memnew(DockSplitContainer);
+		wrapper_split->set_name("DockSplitDynamicWrapper" + itos(next_dynamic_dock_slot));
+		wrapper_split->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		wrapper_split->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+
+		old_parent_control->set_block_signals(true);
+		old_parent_control->remove_child(p_target_slot);
+		old_parent_control->add_child(wrapper_split);
+		old_parent_control->move_child(wrapper_split, old_index);
+		old_parent_control->set_block_signals(false);
+		wrapper_split->add_child(p_target_slot);
+		parent_split = wrapper_split;
+	}
+
+	const bool horizontal_split = p_zone == 1 || p_zone == 2; // LEFT / RIGHT.
+	const bool new_slot_first = p_zone == 1 || p_zone == 3; // LEFT / TOP.
+	const int old_index = p_target_slot->get_index(false);
+	const int dynamic_slot_id = next_dynamic_dock_slot++;
+
+	DockTabContainer *new_slot = nullptr;
+	if (horizontal_split) {
+		new_slot = memnew(SideDockTabContainer(dynamic_slot_id, p_target_slot->grid_rect));
+	} else {
+		new_slot = memnew(BottomSideDockTabContainer(dynamic_slot_id, p_target_slot->grid_rect));
+	}
+	new_slot->set_name("DockSlotDynamic" + itos(dynamic_slot_id));
+
+	DockSplitContainer *split = memnew(DockSplitContainer);
+	split->set_name("DockSplitDynamic" + itos(dynamic_slot_id));
+	split->set_vertical(!horizontal_split);
+	split->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	split->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+
+	parent_split->set_block_signals(true);
+	parent_split->remove_child(p_target_slot);
+	parent_split->add_child(split);
+	parent_split->move_child(split, old_index);
+	parent_split->set_block_signals(false);
+
+	if (new_slot_first) {
+		split->add_child(new_slot);
+		split->add_child(p_target_slot);
+	} else {
+		split->add_child(p_target_slot);
+		split->add_child(new_slot);
+	}
+
+	register_dock_slot(new_slot);
+	_move_dock(p_dock, new_slot, 0);
+	_update_layout();
+}
+
+void EditorDockManager::_collapse_empty_dynamic_slot(DockTabContainer *p_slot) {
+	ERR_FAIL_NULL(p_slot);
+	if (!dynamic_dock_slot_ids.has(p_slot->dock_slot) || p_slot->get_tab_count() > 0) {
+		return;
+	}
+
+	DockSplitContainer *parent_split = Object::cast_to<DockSplitContainer>(p_slot->get_parent());
+	if (!parent_split) {
+		return;
+	}
+	Node *grandparent = parent_split->get_parent();
+	DockSplitContainer *grandparent_split = Object::cast_to<DockSplitContainer>(grandparent);
+	if (!grandparent_split) {
+		return;
+	}
+
+	Control *sibling = nullptr;
+	for (int i = 0; i < parent_split->get_child_count(false); i++) {
+		Control *child = Object::cast_to<Control>(parent_split->get_child(i, false));
+		if (child && child != p_slot && !child->is_set_as_top_level()) {
+			sibling = child;
+			break;
+		}
+	}
+	if (!sibling) {
+		return;
+	}
+
+	const int parent_index = parent_split->get_index(false);
+	dynamic_dock_slots.erase(p_slot->dock_slot);
+	dynamic_dock_slot_ids.erase(p_slot->dock_slot);
+
+	parent_split->remove_child(p_slot);
+	memdelete(p_slot);
+	parent_split->remove_child(sibling);
+	grandparent_split->remove_child(parent_split);
+	grandparent_split->add_child(sibling);
+	grandparent_split->move_child(sibling, parent_index);
+	memdelete(parent_split);
+}
+
 void EditorDockManager::_move_dock(EditorDock *p_dock, Control *p_target, int p_tab_index, bool p_set_current) {
 	ERR_FAIL_NULL(p_dock);
 	ERR_FAIL_COND_MSG(!all_docks.has(p_dock), vformat("Cannot move unknown dock '%s'.", p_dock->get_display_title()));
@@ -356,6 +474,7 @@ void EditorDockManager::_move_dock(EditorDock *p_dock, Control *p_target, int p_
 			parent->set_block_signals(false);
 			if (parent_tabs) {
 				parent_tabs->update_visibility();
+				_collapse_empty_dynamic_slot(parent_tabs);
 			}
 		}
 	}
@@ -393,6 +512,203 @@ void EditorDockManager::_move_dock(EditorDock *p_dock, Control *p_target, int p_
 	}
 }
 
+bool EditorDockManager::_control_tree_contains_dynamic_slot(Control *p_control) const {
+	if (!p_control) {
+		return false;
+	}
+	DockTabContainer *slot = Object::cast_to<DockTabContainer>(p_control);
+	if (slot && dynamic_dock_slot_ids.has(slot->dock_slot)) {
+		return true;
+	}
+	for (int i = 0; i < p_control->get_child_count(false); i++) {
+		Control *child = Object::cast_to<Control>(p_control->get_child(i, false));
+		if (child && !child->is_set_as_top_level() && _control_tree_contains_dynamic_slot(child)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+Dictionary EditorDockManager::_serialize_dynamic_split_tree(Control *p_control) const {
+	Dictionary tree;
+	DockTabContainer *slot = Object::cast_to<DockTabContainer>(p_control);
+	if (slot) {
+		tree["type"] = "slot";
+		tree["slot"] = slot->dock_slot;
+		tree["layout"] = (int)slot->layout;
+		tree["grid_rect"] = slot->grid_rect;
+		return tree;
+	}
+
+	DockSplitContainer *split = Object::cast_to<DockSplitContainer>(p_control);
+	if (split) {
+		tree["type"] = "split";
+		tree["vertical"] = split->is_vertical();
+		tree["offsets"] = split->get_split_offsets();
+		Array children;
+		for (int i = 0; i < split->get_child_count(false); i++) {
+			Control *child = Object::cast_to<Control>(split->get_child(i, false));
+			if (!child || child->is_set_as_top_level()) {
+				continue;
+			}
+			children.push_back(_serialize_dynamic_split_tree(child));
+		}
+		tree["children"] = children;
+	}
+	return tree;
+}
+
+Control *EditorDockManager::_restore_dynamic_split_tree(const Dictionary &p_tree) {
+	const String type = p_tree.get("type", "");
+	if (type == "slot") {
+		const int slot_id = p_tree.get("slot", EditorDock::DOCK_SLOT_NONE);
+		if (slot_id >= 0 && slot_id < EditorDock::DOCK_SLOT_MAX) {
+			DockTabContainer *slot = dock_slots[slot_id];
+			ERR_FAIL_NULL_V(slot, nullptr);
+			if (slot->get_parent()) {
+				slot->get_parent()->remove_child(slot);
+			}
+			return slot;
+		}
+
+		ERR_FAIL_COND_V(slot_id < EditorDock::DOCK_SLOT_MAX, nullptr);
+		DockTabContainer *slot = nullptr;
+		EditorDock::DockLayout layout = (EditorDock::DockLayout)(int)p_tree.get("layout", (int)EditorDock::DOCK_LAYOUT_VERTICAL);
+		Rect2i grid_rect = p_tree.get("grid_rect", Rect2i(2, 0, 1, 1));
+		if (layout == EditorDock::DOCK_LAYOUT_HORIZONTAL) {
+			slot = memnew(BottomSideDockTabContainer(slot_id, grid_rect));
+		} else {
+			slot = memnew(SideDockTabContainer(slot_id, grid_rect));
+		}
+		slot->set_name("DockSlotDynamic" + itos(slot_id));
+		register_dock_slot(slot);
+		next_dynamic_dock_slot = MAX(next_dynamic_dock_slot, slot_id + 1);
+		return slot;
+	}
+
+	if (type == "split") {
+		DockSplitContainer *split = memnew(DockSplitContainer);
+		split->set_name("DockSplitDynamicRestored");
+		split->set_vertical(p_tree.get("vertical", false));
+		split->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		split->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+		Array children = p_tree.get("children", Array());
+		for (const Variant &child_variant : children) {
+			Dictionary child_tree = child_variant;
+			Control *child = _restore_dynamic_split_tree(child_tree);
+			if (child) {
+				split->add_child(child);
+			}
+		}
+		PackedInt32Array offsets = p_tree.get("offsets", PackedInt32Array());
+		if (!offsets.is_empty()) {
+			split->set_split_offsets(offsets);
+		}
+		return split;
+	}
+
+	return nullptr;
+}
+
+void EditorDockManager::_save_dynamic_splits_to_config(Ref<ConfigFile> p_layout, const String &p_section) const {
+	Dictionary dynamic_layout;
+	for (int i = 0; i < EditorDock::DOCK_SLOT_MAX; i++) {
+		DockTabContainer *slot = dock_slots[i];
+		if (!slot) {
+			continue;
+		}
+		Control *root = slot;
+		Control *parent_control = Object::cast_to<Control>(root->get_parent());
+		while (parent_control && parent_control->get_name().operator String().begins_with("DockSplitDynamic")) {
+			root = parent_control;
+			parent_control = Object::cast_to<Control>(root->get_parent());
+		}
+		if (root != slot && _control_tree_contains_dynamic_slot(root)) {
+			dynamic_layout[itos(i)] = _serialize_dynamic_split_tree(root);
+		}
+	}
+	p_layout->set_value(p_section, "dock_dynamic_splits", dynamic_layout);
+}
+
+void EditorDockManager::_clear_dynamic_splits() {
+	HashSet<Control *> roots_to_delete;
+	for (int i = 0; i < EditorDock::DOCK_SLOT_MAX; i++) {
+		DockTabContainer *slot = dock_slots[i];
+		if (!slot) {
+			continue;
+		}
+		Control *root = slot;
+		Control *parent_control = Object::cast_to<Control>(root->get_parent());
+		while (parent_control && parent_control->get_name().operator String().begins_with("DockSplitDynamic")) {
+			root = parent_control;
+			parent_control = Object::cast_to<Control>(root->get_parent());
+		}
+		if (root != slot && parent_control) {
+			const int root_index = root->get_index(false);
+			Node *slot_parent = slot->get_parent();
+			if (slot_parent) {
+				slot_parent->remove_child(slot);
+			}
+			parent_control->remove_child(root);
+			parent_control->add_child(slot);
+			parent_control->move_child(slot, root_index);
+			roots_to_delete.insert(root);
+		}
+	}
+	DockTabContainer *fallback_slot = nullptr;
+	for (int i = 0; i < EditorDock::DOCK_SLOT_MAX; i++) {
+		if (dock_slots[i]) {
+			fallback_slot = dock_slots[i];
+			break;
+		}
+	}
+	for (const KeyValue<int, DockTabContainer *> &slot_kv : dynamic_dock_slots) {
+		DockTabContainer *slot = slot_kv.value;
+		while (slot && slot->get_tab_count() > 0 && fallback_slot) {
+			EditorDock *dock = slot->get_dock(0);
+			ERR_BREAK(!dock);
+			slot->remove_child(dock);
+			if (fallback_slot->layout != dock->current_layout) {
+				dock->update_layout(fallback_slot->layout);
+				dock->current_layout = fallback_slot->layout;
+			}
+			dock->dock_slot_index = fallback_slot->dock_slot;
+			fallback_slot->add_child(dock);
+			dock->set_tab_index(fallback_slot->get_tab_count() - 1, false);
+			dock->show();
+		}
+	}
+	for (Control *root : roots_to_delete) {
+		memdelete(root);
+	}
+	dynamic_dock_slots.clear();
+	dynamic_dock_slot_ids.clear();
+	next_dynamic_dock_slot = EditorDock::DOCK_SLOT_MAX;
+}
+
+void EditorDockManager::_load_dynamic_splits_from_config(Ref<ConfigFile> p_layout, const String &p_section) {
+	_clear_dynamic_splits();
+	Dictionary dynamic_layout = p_layout->get_value(p_section, "dock_dynamic_splits", Dictionary());
+	for (const Variant &key_variant : dynamic_layout.keys()) {
+		const int anchor_slot_id = String(key_variant).to_int();
+		DockTabContainer *anchor_slot = _get_dock_slot(anchor_slot_id);
+		if (!anchor_slot || !anchor_slot->get_parent()) {
+			continue;
+		}
+		Node *old_parent = anchor_slot->get_parent();
+		Control *old_parent_control = Object::cast_to<Control>(old_parent);
+		ERR_CONTINUE(!old_parent_control);
+		const int old_index = anchor_slot->get_index(false);
+		Dictionary tree = dynamic_layout[key_variant];
+		Control *restored_root = _restore_dynamic_split_tree(tree);
+		if (!restored_root) {
+			continue;
+		}
+		old_parent_control->add_child(restored_root);
+		old_parent_control->move_child(restored_root, old_index);
+	}
+}
+
 void EditorDockManager::_queue_update_tab_style(EditorDock *p_dock) {
 	if (dirty_docks.is_empty()) {
 		callable_mp(this, &EditorDockManager::_update_dirty_dock_tabs).call_deferred();
@@ -414,9 +730,17 @@ void EditorDockManager::_update_dirty_dock_tabs() {
 }
 
 void EditorDockManager::save_docks_to_config(Ref<ConfigFile> p_layout, const String &p_section) const {
+	_save_dynamic_splits_to_config(p_layout, p_section);
+
 	// Save docks by dock slot.
 	for (int i = 0; i < EditorDock::DOCK_SLOT_MAX; i++) {
+		if (!dock_slots[i]) {
+			continue;
+		}
 		dock_slots[i]->save_docks_to_config(p_layout, p_section);
+	}
+	for (const KeyValue<int, DockTabContainer *> &slot_kv : dynamic_dock_slots) {
+		slot_kv.value->save_docks_to_config(p_layout, p_section);
 	}
 
 	// Clear the special dock slot for docks without default slots (index -1 = dock_0).
@@ -534,8 +858,21 @@ void EditorDockManager::load_docks_from_config(Ref<ConfigFile> p_layout, const S
 		dock_map[dock->get_effective_layout_key()] = dock;
 	}
 
+	_load_dynamic_splits_from_config(p_layout, p_section);
+
+	Vector<int> slot_ids;
+	slot_ids.push_back(EditorDock::DOCK_SLOT_NONE);
+	for (int i = 0; i < EditorDock::DOCK_SLOT_MAX; i++) {
+		if (dock_slots[i]) {
+			slot_ids.push_back(i);
+		}
+	}
+	for (const int &slot_id : dynamic_dock_slot_ids) {
+		slot_ids.push_back(slot_id);
+	}
+
 	// Load docks by slot. Index -1 is for docks that have no slot.
-	for (int i = -1; i < EditorDock::DOCK_SLOT_MAX; i++) {
+	for (int i : slot_ids) {
 		const String key = DockTabContainer::get_config_key(i);
 		if (!p_layout->has_section_key(p_section, key)) {
 			continue;
@@ -567,7 +904,7 @@ void EditorDockManager::load_docks_from_config(Ref<ConfigFile> p_layout, const S
 					_move_dock(dock, closed_dock_parent);
 				} else {
 					dock->is_open = true;
-					_move_dock(dock, dock_slots[i], 0, false);
+					_move_dock(dock, _get_dock_slot(i), 0, false);
 				}
 			}
 			dock->load_layout_from_config(p_layout, section_name);
@@ -579,8 +916,15 @@ void EditorDockManager::load_docks_from_config(Ref<ConfigFile> p_layout, const S
 
 	// Set the selected tabs.
 	for (int i = 0; i < EditorDock::DOCK_SLOT_MAX; i++) {
+		if (!dock_slots[i]) {
+			continue;
+		}
 		int selected_tab_idx = p_layout->get_value(p_section, DockTabContainer::get_config_key(i) + "_selected_tab_idx", -1);
 		dock_slots[i]->load_selected_tab(selected_tab_idx);
+	}
+	for (const KeyValue<int, DockTabContainer *> &slot_kv : dynamic_dock_slots) {
+		int selected_tab_idx = p_layout->get_value(p_section, DockTabContainer::get_config_key(slot_kv.key) + "_selected_tab_idx", -1);
+		slot_kv.value->load_selected_tab(selected_tab_idx);
 	}
 
 	// Load SplitContainer offsets.
@@ -668,7 +1012,8 @@ void EditorDockManager::open_dock(EditorDock *p_dock, bool p_set_current) {
 
 	// Open dock to its previous location.
 	if (p_dock->dock_slot_index != EditorDock::DOCK_SLOT_NONE) {
-		DockTabContainer *slot = dock_slots[p_dock->dock_slot_index];
+		DockTabContainer *slot = _get_dock_slot(p_dock->dock_slot_index);
+		ERR_FAIL_NULL(slot);
 		int tab_index = p_dock->previous_tab_index;
 		if (tab_index < 0) {
 			tab_index = slot->get_tab_count();
@@ -768,7 +1113,18 @@ void EditorDockManager::set_docks_visible(bool p_show) {
 	docks_visible = p_show;
 	for (int i = 0; i < EditorDock::DOCK_SLOT_MAX; i++) {
 		// Show and hide in reverse order due to the SplitContainer prioritizing the last split offset.
-		dock_slots[docks_visible ? i : EditorDock::DOCK_SLOT_MAX - i - 1]->update_visibility();
+		int slot_index = docks_visible ? i : EditorDock::DOCK_SLOT_MAX - i - 1;
+		if (slot_index == EditorDock::DOCK_SLOT_CENTER) {
+			continue;
+		}
+		DockTabContainer *slot = dock_slots[slot_index];
+		if (!slot) {
+			continue;
+		}
+		slot->update_visibility();
+	}
+	for (const KeyValue<int, DockTabContainer *> &slot_kv : dynamic_dock_slots) {
+		slot_kv.value->update_visibility();
 	}
 	_update_layout();
 }
@@ -785,7 +1141,13 @@ void EditorDockManager::update_tab_styles() {
 
 void EditorDockManager::set_tab_icon_max_width(int p_max_width) {
 	for (int i = 0; i < EditorDock::DOCK_SLOT_MAX; i++) {
+		if (!dock_slots[i]) {
+			continue;
+		}
 		dock_slots[i]->add_theme_constant_override(SNAME("icon_max_width"), p_max_width);
+	}
+	for (const KeyValue<int, DockTabContainer *> &slot_kv : dynamic_dock_slots) {
+		slot_kv.value->add_theme_constant_override(SNAME("icon_max_width"), p_max_width);
 	}
 }
 
@@ -811,7 +1173,12 @@ void EditorDockManager::set_bottom_hsplit(DockSplitContainer *p_split) {
 
 void EditorDockManager::register_dock_slot(DockTabContainer *p_tab_container) {
 	ERR_FAIL_NULL(p_tab_container);
-	dock_slots[p_tab_container->dock_slot] = p_tab_container;
+	if (p_tab_container->dock_slot >= 0 && p_tab_container->dock_slot < EditorDock::DOCK_SLOT_MAX) {
+		dock_slots[p_tab_container->dock_slot] = p_tab_container;
+	} else {
+		dynamic_dock_slots[p_tab_container->dock_slot] = p_tab_container;
+		dynamic_dock_slot_ids.insert(p_tab_container->dock_slot);
+	}
 
 	p_tab_container->set_dock_context_popup(dock_context_popup);
 	p_tab_container->connect("tab_changed", callable_mp(this, &EditorDockManager::_update_layout).unbind(1));
@@ -1035,24 +1402,18 @@ void DockShortcutHandler::shortcut_input(const Ref<InputEvent> &p_event) {
 
 void DockSlotGrid::_update_rect_cache() {
 	for (int i = 0; i < EditorDock::DOCK_SLOT_MAX; i++) {
-		Rect2 rect = EditorDockManager::get_singleton()->dock_slots[i]->grid_rect;
+		DockTabContainer *slot = EditorDockManager::get_singleton()->dock_slots[i];
+		if (!slot) {
+			rect_cache[i] = Rect2();
+			continue;
+		}
+		Rect2 rect = slot->grid_rect;
 		if (is_layout_rtl()) {
 			rect.position.x = GRID_SIZE.x - rect.position.x - rect.size.x;
 		}
 		rect.position = rect.position * CELL_SIZE * EDSCALE + (rect.position + Vector2i(0, 1)) * MARGINS * EDSCALE;
 		rect.size = rect.size * CELL_SIZE * EDSCALE + (rect.size - Vector2i(1, 1)) * MARGINS * EDSCALE;
 		rect_cache[i] = rect;
-	}
-
-	// Temporarily hard-coded, until main screen is registered as a slot.
-	{
-		Rect2 rect = Rect2i(2, 0, 4, 4);
-		if (is_layout_rtl()) {
-			rect.position.x = GRID_SIZE.x - rect.position.x - rect.size.x;
-		}
-		rect.position = rect.position * CELL_SIZE * EDSCALE + (rect.position + Vector2i(0, 1)) * MARGINS * EDSCALE;
-		rect.size = rect.size * CELL_SIZE * EDSCALE + (rect.size - Vector2i(1, 1)) * MARGINS * EDSCALE;
-		main_screen_rect = rect;
 	}
 }
 
@@ -1089,10 +1450,13 @@ void DockSlotGrid::_notification(int p_what) {
 			}
 
 			for (int i = 0; i < EditorDock::DOCK_SLOT_MAX; i++) {
-				const Rect2i slot_rect = rect_cache[i];
-				int max_tabs = EditorDockManager::get_singleton()->dock_slots[i]->grid_rect.size.x * TABS_PER_CELL;
-
 				DockTabContainer *dock_slot = EditorDockManager::get_singleton()->dock_slots[i];
+				if (!dock_slot) {
+					continue;
+				}
+				const Rect2i slot_rect = rect_cache[i];
+				int max_tabs = dock_slot->grid_rect.size.x * TABS_PER_CELL;
+
 				bool is_context_slot = context_tab_container == dock_slot;
 				bool is_slot_available = context_dock->available_layouts & dock_slot->layout;
 				int tabs_to_draw = MIN(max_tabs, dock_slot->get_tab_count());
@@ -1126,7 +1490,6 @@ void DockSlotGrid::_notification(int p_what) {
 					}
 				}
 			}
-			draw_rect(main_screen_rect, unusable_dock_color);
 		} break;
 
 		case NOTIFICATION_MOUSE_EXIT: {
@@ -1145,6 +1508,9 @@ void DockSlotGrid::gui_input(const Ref<InputEvent> &p_event) {
 
 		int over_dock_slot = -1;
 		for (int i = 0; i < EditorDock::DOCK_SLOT_MAX; i++) {
+			if (!EditorDockManager::get_singleton()->dock_slots[i]) {
+				continue;
+			}
 			if (rect_cache[i].has_point(point)) {
 				over_dock_slot = i;
 				break;

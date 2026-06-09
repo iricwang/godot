@@ -240,3 +240,12 @@ msgstr "插入控制字符"
 
 msgid "(Other)"
 msgstr "（其他）"
+
+msgid "Copy File Path"
+msgstr "复制文件路径"
+
+msgid "Copy File UID"
+msgstr "复制文件UID"
+
+msgid "Show In File Explorer"
+msgstr "在文件资源管理器中显示"

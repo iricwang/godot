@@ -41,6 +41,7 @@
 #include "editor/docks/groups_dock.h"
 #include "editor/docks/signals_dock.h"
 #include "editor/editor_node.h"
+#include "editor/docks/scene_tree_dock.h"
 #include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/file_system/editor_file_system.h"
@@ -2010,6 +2011,34 @@ bool SceneTreeEditor::can_drop_data_fw(const Point2 &p_point, const Variant &p_d
 		return true;
 	}
 
+	if (String(d["type"]) == "node_class") {
+		String class_name = d.get("class_name", "");
+		bool can_instantiate_node = false;
+		if (ClassDB::class_exists(class_name)) {
+			can_instantiate_node = ClassDB::can_instantiate(class_name) && ClassDB::is_parent_class(class_name, "Node");
+		} else if (ScriptServer::is_global_class(class_name)) {
+			can_instantiate_node = EditorNode::get_editor_data().script_class_is_parent(class_name, "Node");
+		} else {
+			const HashMap<String, Vector<EditorData::CustomType>> &custom_types = EditorNode::get_editor_data().get_custom_types();
+			for (const KeyValue<String, Vector<EditorData::CustomType>> &E : custom_types) {
+				for (const EditorData::CustomType &ct : E.value) {
+					if (ct.name == class_name) {
+						can_instantiate_node = ClassDB::is_parent_class(E.key, "Node");
+						break;
+					}
+				}
+				if (can_instantiate_node) {
+					break;
+				}
+			}
+		}
+		if (!can_instantiate_node) {
+			return false;
+		}
+		tree->set_drop_mode_flags(Tree::DROP_MODE_ON_ITEM);
+		return true;
+	}
+
 	return false;
 }
 
@@ -2059,6 +2088,11 @@ void SceneTreeEditor::drop_data_fw(const Point2 &p_point, const Variant &p_data,
 				emit_signal(SNAME("script_dropped"), sp, np);
 			}
 		}
+	}
+
+	if (String(d["type"]) == "node_class") {
+		String class_name = d["class_name"];
+		SceneTreeDock::get_singleton()->add_node_by_class(class_name, n);
 	}
 }
 

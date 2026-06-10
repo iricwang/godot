@@ -384,7 +384,10 @@ void EditorMainScreen::remove_main_plugin(EditorPlugin *p_editor) {
 	main_editor_plugins.erase(p_editor->get_plugin_name());
 
 	for (int i = remove_index; i < buttons.size(); i++) {
-		buttons[i]->disconnect(SceneStringName(pressed), callable_mp(this, &EditorMainScreen::select));
+		Callable old_pressed_callable = callable_mp(this, &EditorMainScreen::select).bind(i + 1);
+		if (buttons[i]->is_connected(SceneStringName(pressed), old_pressed_callable)) {
+			buttons[i]->disconnect(SceneStringName(pressed), old_pressed_callable);
+		}
 		buttons[i]->connect(SceneStringName(pressed), callable_mp(this, &EditorMainScreen::select).bind(i));
 	}
 

@@ -5960,7 +5960,36 @@ bool Node3DEditorViewport::can_drop_data_fw(const Point2 &p_point, const Variant
 	preview_node_viewport_pos = p_point;
 
 	Dictionary d = p_data;
-	if (!d.has("type") || String(d["type"]) != "files") {
+	if (!d.has("type")) {
+		tooltip_panel->hide();
+		return false;
+	}
+	if (String(d["type"]) == "node_class") {
+		String class_name = d["class_name"];
+		bool is_node3d = ClassDB::is_parent_class(class_name, "Node3D") ||
+				EditorNode::get_editor_data().script_class_is_parent(class_name, "Node3D");
+		if (!is_node3d) {
+			const HashMap<String, Vector<EditorData::CustomType>> &custom_types = EditorNode::get_editor_data().get_custom_types();
+			for (const KeyValue<String, Vector<EditorData::CustomType>> &E : custom_types) {
+				for (const EditorData::CustomType &ct : E.value) {
+					if (ct.name == class_name) {
+						is_node3d = ClassDB::is_parent_class(E.key, "Node3D");
+						break;
+					}
+				}
+				if (is_node3d) {
+					break;
+				}
+			}
+		}
+		if (is_node3d) {
+			_show_tooltip(vformat(TTR("Adding %s..."), class_name), "[ul]" + TTR("[b]Default:[/b] Add as sibling of selected node (except when root is selected).") + "\n" + TTR("[b]Hold Shift:[/b] Add as child of selected node.") + "\n" + TTR("[b]Hold Alt:[/b] Add as child of root node.") + "[/ul]");
+			return true;
+		}
+		tooltip_panel->hide();
+		return false;
+	}
+	if (String(d["type"]) != "files") {
 		tooltip_panel->hide();
 		return false;
 	}
@@ -6125,6 +6154,49 @@ void Node3DEditorViewport::drop_data_fw(const Point2 &p_point, const Variant &p_
 
 	selected_files.clear();
 	Dictionary d = p_data;
+	if (d.has("type") && String(d["type"]) == "node_class") {
+		String class_name = d["class_name"];
+
+		const List<Node *> &selected_nodes = EditorNode::get_singleton()->get_editor_selection()->get_top_selected_node_list();
+		Node *root_node = EditorNode::get_singleton()->get_edited_scene();
+		Node *drop_target = nullptr;
+		if (selected_nodes.size() > 0) {
+			Node *selected_node = selected_nodes.front()->get();
+			if (is_alt) {
+				drop_target = root_node;
+			} else if (is_shift) {
+				drop_target = selected_node;
+			} else {
+				drop_target = (selected_node != root_node) ? selected_node->get_parent() : root_node;
+			}
+		} else {
+			drop_target = root_node;
+		}
+
+		Node *created = SceneTreeDock::get_singleton()->add_node_by_class(class_name, drop_target, false);
+		if (created) {
+			Node3D *node3d = Object::cast_to<Node3D>(created);
+			if (node3d) {
+				EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+				Transform3D parent_tf;
+				Node3D *parent_node3d = Object::cast_to<Node3D>(drop_target);
+				if (parent_node3d) {
+					parent_tf = parent_node3d->get_global_gizmo_transform();
+				}
+				Vector3 pos = _get_instance_position(p_point, node3d);
+				Transform3D new_tf = node3d->get_transform();
+				if (node3d->is_set_as_top_level()) {
+					new_tf.origin += pos;
+				} else {
+					new_tf.origin = parent_tf.affine_inverse().xform(pos + node3d->get_position());
+					new_tf.basis = parent_tf.affine_inverse().basis * new_tf.basis;
+				}
+				undo_redo->add_do_method(created, "set_transform", new_tf);
+			}
+			EditorUndoRedoManager::get_singleton()->commit_action();
+		}
+		return;
+	}
 	if (d.has("type") && String(d["type"]) == "files") {
 		selected_files = d["files"];
 	}

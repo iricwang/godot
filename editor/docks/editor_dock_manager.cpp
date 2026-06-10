@@ -102,24 +102,15 @@ void DockSplitContainer::add_child_notify(Node *p_child) {
 }
 
 void DockSplitContainer::remove_child_notify(Node *p_child) {
+	Control *child_control = Object::cast_to<Control>(p_child);
+	if (child_control && !child_control->is_set_as_top_level()) {
+		Callable update_visibility_callable = callable_mp(this, &DockSplitContainer::_update_visibility);
+		if (child_control->is_connected(SceneStringName(visibility_changed), update_visibility_callable)) {
+			child_control->disconnect(SceneStringName(visibility_changed), update_visibility_callable);
+		}
+	}
+
 	SplitContainer::remove_child_notify(p_child);
-
-	Control *child_control = nullptr;
-	for (int i = 0; i < get_child_count(false); i++) {
-		Control *c = Object::cast_to<Control>(get_child(i, false));
-		if (!c || c->is_set_as_top_level()) {
-			continue;
-		}
-		if (p_child == c) {
-			child_control = c;
-			break;
-		}
-	}
-	if (!child_control) {
-		return;
-	}
-
-	child_control->disconnect(SceneStringName(visibility_changed), callable_mp(this, &DockSplitContainer::_update_visibility));
 	_update_visibility();
 }
 
@@ -571,7 +562,7 @@ Control *EditorDockManager::_restore_dynamic_split_tree(const Dictionary &p_tree
 			return slot;
 		}
 
-		ERR_FAIL_COND_V(slot_id < EditorDock::DOCK_SLOT_MAX, nullptr);
+		ERR_FAIL_COND_V(slot_id < DOCK_SLOT_DYNAMIC_START, nullptr);
 		DockTabContainer *slot = nullptr;
 		EditorDock::DockLayout layout = (EditorDock::DockLayout)(int)p_tree.get("layout", (int)EditorDock::DOCK_LAYOUT_VERTICAL);
 		Rect2i grid_rect = p_tree.get("grid_rect", Rect2i(2, 0, 1, 1));
@@ -683,7 +674,7 @@ void EditorDockManager::_clear_dynamic_splits() {
 	}
 	dynamic_dock_slots.clear();
 	dynamic_dock_slot_ids.clear();
-	next_dynamic_dock_slot = EditorDock::DOCK_SLOT_MAX;
+	next_dynamic_dock_slot = DOCK_SLOT_DYNAMIC_START;
 }
 
 void EditorDockManager::_load_dynamic_splits_from_config(Ref<ConfigFile> p_layout, const String &p_section) {

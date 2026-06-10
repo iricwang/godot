@@ -40,7 +40,7 @@
 #include "scene/resources/style_box_flat.h"
 
 bool EditorDockDragHint::can_drop_data(const Point2 &p_point, const Variant &p_data) const {
-	return can_drop_dock;
+	return can_drop_dock && _can_drop_zone(_get_drop_zone(p_point));
 }
 
 EditorDockDragHint::DropZone EditorDockDragHint::_get_drop_zone(const Point2 &p_point) const {
@@ -177,7 +177,7 @@ void EditorDockDragHint::_notification(int p_what) {
 				return;
 			}
 
-			can_drop_dock = dragged_dock->get_available_layouts() & dock_container->layout;
+			can_drop_dock = true;
 
 			dock_drop_highlight->set_border_color(valid_drop_color);
 			dock_drop_highlight->set_bg_color(valid_drop_color * Color(1, 1, 1, 0.1));
@@ -340,6 +340,13 @@ DockTabContainer::DockTabContainer(int p_slot) {
 
 	get_tab_bar()->set_switch_on_release(true);
 	get_tab_bar()->connect("tab_rmb_clicked", callable_mp(this, &DockTabContainer::_tab_rmb_clicked));
+}
+
+DockTabContainer::~DockTabContainer() {
+	if (drag_hint) {
+		memdelete(drag_hint);
+		drag_hint = nullptr;
+	}
 }
 
 Rect2 SideDockTabContainer::get_floating_dock_rect(EditorDock *p_dock) {

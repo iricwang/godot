@@ -36,6 +36,7 @@
 #include "core/io/resource_saver.h"
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
+#include "core/object/script_language.h"
 #include "core/os/keyboard.h"
 #include "editor/animation/animation_player_editor_plugin.h"
 #include "editor/debugger/editor_debugger_node.h"
@@ -3141,6 +3142,89 @@ void SceneTreeDock::_post_do_create(Node *p_child) {
 	}
 
 	emit_signal(SNAME("node_created"), p_child);
+}
+
+Node *SceneTreeDock::add_node_by_class(const String &p_class_name, Node *p_parent, bool p_commit_action) {
+	ERR_FAIL_COND_V(p_class_name.is_empty(), nullptr);
+
+	Variant obj;
+	if (ClassDB::class_exists(p_class_name)) {
+		obj = ClassDB::instantiate(p_class_name);
+	} else if (ScriptServer::is_global_class(p_class_name)) {
+		obj = EditorNode::get_editor_data().script_class_instance(p_class_name);
+		Node *n = Object::cast_to<Node>(obj);
+		if (n) {
+			n->set_name(p_class_name);
+		}
+	} else {
+		// Try custom type.
+		EditorData &ed = EditorNode::get_editor_data();
+		bool found = false;
+		for (const KeyValue<String, Vector<EditorData::CustomType>> &E : ed.get_custom_types()) {
+			for (const EditorData::CustomType &ct : E.value) {
+				if (ct.name == p_class_name) {
+					obj = ed.instantiate_custom_type(p_class_name, E.key);
+					found = true;
+					break;
+				}
+			}
+			if (found) {
+				break;
+			}
+		}
+	}
+
+	Node *child = Object::cast_to<Node>(obj);
+	if (!child) {
+		Object *object = Object::cast_to<Object>(obj);
+		if (object) {
+			memdelete(object);
+		}
+		ERR_FAIL_V(nullptr);
+	}
+
+	EditorNode::get_editor_data().instantiate_object_properties(obj);
+
+	Node *parent = p_parent;
+	if (!parent) {
+		if (edited_scene) {
+			parent = edited_scene;
+		} else {
+			parent = scene_root;
+			ERR_FAIL_NULL_V(parent, nullptr);
+		}
+	}
+
+	String new_name = parent->validate_child_name(child);
+	if (GLOBAL_GET("editor/naming/node_name_casing").operator int() != NAME_CASING_PASCAL_CASE) {
+		new_name = adjust_name_casing(new_name);
+	}
+	child->set_name(new_name);
+
+	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+	undo_redo->create_action_for_history(TTR("Create Node"), editor_data->get_current_edited_scene_history_id());
+
+	if (edited_scene) {
+		undo_redo->add_do_method(parent, "add_child", child, true);
+		undo_redo->add_do_method(child, "set_owner", edited_scene);
+		undo_redo->add_do_reference(child);
+		undo_redo->add_undo_method(parent, "remove_child", child);
+
+		EditorDebuggerNode *ed = EditorDebuggerNode::get_singleton();
+		undo_redo->add_do_method(ed, "live_debug_create_node", edited_scene->get_path_to(parent), child->get_class(), new_name);
+		undo_redo->add_undo_method(ed, "live_debug_remove_node", NodePath(String(edited_scene->get_path_to(parent)).path_join(new_name)));
+	} else {
+		undo_redo->add_do_method(EditorNode::get_singleton(), "set_edited_scene", child);
+		undo_redo->add_do_method(scene_tree, "update_tree");
+		undo_redo->add_do_reference(child);
+		undo_redo->add_undo_method(EditorNode::get_singleton(), "set_edited_scene", (Object *)nullptr);
+	}
+
+	undo_redo->add_do_method(this, "_post_do_create", child);
+	if (p_commit_action) {
+		undo_redo->commit_action();
+	}
+	return child;
 }
 
 void SceneTreeDock::_create() {

@@ -37,6 +37,7 @@
 #include "core/string/translation_server.h"
 #include "editor/debugger/editor_debugger_node.h"
 #include "editor/debugger/script_editor_debugger.h"
+#include "editor/plugins/device_preview/device_database.h"
 #include "editor/editor_interface.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
@@ -539,8 +540,9 @@ void GameView::_show_update_window_wrapper() {
 		position = placement.position - offset_embedded_process;
 		screen = placement.screen;
 	}
-	if (placement.size != Size2i()) {
-		size = placement.size + size_diff_embedded_process + wrapped_margins_size;
+	Size2i target_size = _get_embed_target_window_size();
+	if (target_size != Size2i()) {
+		size = target_size + size_diff_embedded_process + wrapped_margins_size;
 	}
 	window_wrapper->restore_window_from_saved_position(Rect2(position, size), screen, Rect2i());
 }
@@ -769,6 +771,68 @@ void GameView::_selection_options_menu_id_pressed(int p_id) {
 	menu->set_item_checked(menu->get_item_index(SELECTION_PREFER_GROUP), selection_prefer_group);
 }
 
+void GameView::_preview_resolution_menu_id_pressed(int p_id) {
+	if (p_id == PREVIEW_RESOLUTION_FREE) {
+		preview_resolution = Size2i();
+		preview_resolution_device_name = String();
+	} else if (p_id >= PREVIEW_RESOLUTION_DEVICE_START) {
+		int idx = p_id - PREVIEW_RESOLUTION_DEVICE_START;
+		const Vector<Ref<DeviceProfile>> &presets = DeviceDatabase::get_presets();
+		if (idx >= 0 && idx < presets.size()) {
+			Ref<DeviceProfile> profile = presets[idx];
+			preview_resolution = profile->get_resolution();
+			preview_resolution_device_name = profile->get_device_name();
+		}
+	}
+
+	EditorSettings::get_singleton()->set_project_metadata("game_view", "preview_resolution_device", preview_resolution_device_name);
+	_build_preview_resolution_menu();
+	_update_preview_resolution_menu_label();
+	_update_embed_window_size();
+	if (window_wrapper && window_wrapper->get_window_enabled()) {
+		_show_update_window_wrapper();
+	}
+	if (embedded_process) {
+		embedded_process->queue_update_embedded_process();
+	}
+}
+
+void GameView::_build_preview_resolution_menu() {
+	PopupMenu *popup = preview_resolution_menu->get_popup();
+	popup->clear();
+	popup->add_radio_check_item(TTRC("Project Settings"), PREVIEW_RESOLUTION_FREE);
+	popup->set_item_checked(popup->get_item_index(PREVIEW_RESOLUTION_FREE), preview_resolution_device_name.is_empty());
+	popup->add_separator(TTRC("Devices"));
+
+	const Vector<Ref<DeviceProfile>> &presets = DeviceDatabase::get_presets();
+	for (int i = 0; i < presets.size(); i++) {
+		const Ref<DeviceProfile> &profile = presets[i];
+		Size2i resolution = profile->get_resolution();
+		String label = vformat("%s (%d×%d)", profile->get_device_name(), resolution.x, resolution.y);
+		int id = PREVIEW_RESOLUTION_DEVICE_START + i;
+		popup->add_radio_check_item(label, id);
+		popup->set_item_checked(popup->get_item_index(id), preview_resolution_device_name == profile->get_device_name());
+	}
+}
+
+void GameView::_update_preview_resolution_menu_label() {
+	if (preview_resolution_device_name.is_empty()) {
+		preview_resolution_menu->set_text(TTRC("Project"));
+		preview_resolution_menu->set_tooltip_text(TTRC("Use the project window size for the embedded game preview."));
+	} else {
+		preview_resolution_menu->set_text(preview_resolution_device_name);
+		preview_resolution_menu->set_tooltip_text(vformat(TTR("Preview Resolution: %s (%d×%d)"), preview_resolution_device_name, preview_resolution.x, preview_resolution.y));
+	}
+}
+
+Size2i GameView::_get_embed_target_window_size() const {
+	if (preview_resolution != Size2i()) {
+		return preview_resolution;
+	}
+	EditorRun::WindowPlacement placement = EditorRun::get_window_placement();
+	return placement.size;
+}
+
 void GameView::_game_window_options_menu_menu_id_pressed(int p_id) {
 	switch (p_id) {
 		case WINDOW_RUN_GAME_EMBEDDED: {
@@ -987,8 +1051,7 @@ void GameView::_update_embed_window_size() {
 	} else {
 		if (embed_size_mode == SIZE_MODE_FIXED || embed_size_mode == SIZE_MODE_KEEP_ASPECT) {
 			// The embedded process control will need the desired window size.
-			EditorRun::WindowPlacement placement = EditorRun::get_window_placement();
-			embedded_process->set_window_size(placement.size);
+			embedded_process->set_window_size(_get_embed_target_window_size());
 		} else {
 			// Stretch... No need for the window size.
 			embedded_process->set_window_size(Size2i());
@@ -1367,8 +1430,9 @@ void GameView::_update_arguments_for_instance(int p_idx, List<String> &r_argumen
 		if (placement.position != Point2i(INT_MAX, INT_MAX)) {
 			rect.position = placement.position;
 		}
-		if (placement.size != Size2i()) {
-			rect.size = placement.size;
+		Size2i target_size = _get_embed_target_window_size();
+		if (target_size != Size2i()) {
+			rect.size = target_size;
 		}
 	}
 
@@ -1612,6 +1676,26 @@ GameView::GameView(Ref<GameViewDebugger> p_debugger, EmbeddedProcessBase *p_embe
 	embedding_hb = memnew(HBoxContainer);
 	embedding_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	main_menu_fc->add_child(embedding_hb);
+
+	preview_resolution_device_name = EditorSettings::get_singleton()->get_project_metadata("game_view", "preview_resolution_device", String());
+	if (!preview_resolution_device_name.is_empty()) {
+		Ref<DeviceProfile> profile = DeviceDatabase::find_by_name(preview_resolution_device_name);
+		if (profile.is_valid()) {
+			preview_resolution = profile->get_resolution();
+		} else {
+			preview_resolution_device_name = String();
+		}
+	}
+
+	preview_resolution_menu = memnew(MenuButton);
+	embedding_hb->add_child(preview_resolution_menu);
+	preview_resolution_menu->set_flat(false);
+	preview_resolution_menu->set_theme_type_variation("FlatMenuButton");
+	preview_resolution_menu->set_h_size_flags(SIZE_SHRINK_END);
+	preview_resolution_menu->set_accessibility_name(TTRC("Preview Resolution"));
+	preview_resolution_menu->get_popup()->connect(SceneStringName(id_pressed), callable_mp(this, &GameView::_preview_resolution_menu_id_pressed));
+	_build_preview_resolution_menu();
+	_update_preview_resolution_menu_label();
 
 	game_size_label = memnew(Label());
 	embedding_hb->add_child(game_size_label);

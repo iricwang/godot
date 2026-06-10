@@ -6544,7 +6544,40 @@ bool CanvasItemEditorViewport::can_drop_data(const Point2 &p_point, const Varian
 		return false;
 	}
 	Dictionary d = p_data;
-	if (!d.has("type") || (String(d["type"]) != "files")) {
+	if (!d.has("type")) {
+		tooltip_panel->hide();
+		return false;
+	}
+
+	if (String(d["type"]) == "node_class") {
+		String class_name = d["class_name"];
+		bool is_canvas_item = ClassDB::is_parent_class(class_name, "CanvasItem") ||
+					EditorNode::get_editor_data().script_class_is_parent(class_name, "CanvasItem");
+		if (!is_canvas_item) {
+			const HashMap<String, Vector<EditorData::CustomType>> &custom_types = EditorNode::get_editor_data().get_custom_types();
+			for (const KeyValue<String, Vector<EditorData::CustomType>> &E : custom_types) {
+				for (const EditorData::CustomType &ct : E.value) {
+					if (ct.name == class_name) {
+						is_canvas_item = ClassDB::is_parent_class(E.key, "CanvasItem");
+						break;
+					}
+				}
+				if (is_canvas_item) {
+					break;
+				}
+			}
+		}
+		if (!is_canvas_item) {
+			tooltip_panel->hide();
+			return false;
+		}
+		canvas_item_editor->message = vformat(TTR("Adding %s..."), class_name);
+		canvas_item_editor->update_viewport();
+		_show_tooltip(vformat(TTR("Adding %s..."), class_name), "[ul]" + TTR("[b]Default:[/b] Add as sibling of selected node (except when root is selected).") + "\n" + TTR("[b]Hold Shift:[/b] Add as child of selected node.") + "\n" + TTR("[b]Hold Alt:[/b] Add as child of root node.") + "[/ul]");
+		return true;
+	}
+
+	if (String(d["type"]) != "files") {
 		tooltip_panel->hide();
 		return false;
 	}
@@ -6579,6 +6612,7 @@ bool CanvasItemEditorViewport::can_drop_data(const Point2 &p_point, const Varian
 			}
 			if (edited_scene && !edited_scene->get_scene_file_path().is_empty() && _cyclical_dependency_exists(edited_scene->get_scene_file_path(), instantiated_scene)) {
 				error_message = vformat(TTR("Circular dependency found at %s."), path.get_file());
+				memdelete(instantiated_scene);
 				break;
 			}
 			memdelete(instantiated_scene);
@@ -6689,6 +6723,42 @@ void CanvasItemEditorViewport::drop_data(const Point2 &p_point, const Variant &p
 
 	selected_files.clear();
 	Dictionary d = p_data;
+	if (d.has("type") && String(d["type"]) == "node_class") {
+		String class_name = d["class_name"];
+
+		const List<Node *> &selected_nodes = EditorNode::get_singleton()->get_editor_selection()->get_top_selected_node_list();
+		Node *root_node = EditorNode::get_singleton()->get_edited_scene();
+		Node *drop_target = nullptr;
+		if (selected_nodes.size() > 0) {
+			Node *selected_node = selected_nodes.front()->get();
+			if (is_alt) {
+				drop_target = root_node;
+			} else if (is_shift) {
+				drop_target = selected_node;
+			} else {
+				drop_target = (selected_node != root_node) ? selected_node->get_parent() : root_node;
+			}
+		} else {
+			drop_target = root_node;
+		}
+
+		Node *created = SceneTreeDock::get_singleton()->add_node_by_class(class_name, drop_target, false);
+		if (created) {
+			CanvasItem *ci = Object::cast_to<CanvasItem>(created);
+			if (ci) {
+				EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+				Vector2 target_pos = canvas_item_editor->get_canvas_transform().affine_inverse().xform(p_point);
+				target_pos = canvas_item_editor->snap_point(target_pos);
+				CanvasItem *parent_ci = Object::cast_to<CanvasItem>(drop_target);
+				if (parent_ci) {
+					target_pos = parent_ci->get_global_transform_with_canvas().affine_inverse().xform(target_pos);
+				}
+				undo_redo->add_do_method(created, "set_position", target_pos);
+			}
+			EditorUndoRedoManager::get_singleton()->commit_action();
+		}
+		return;
+	}
 	if (d.has("type") && String(d["type"]) == "files") {
 		selected_files = d["files"];
 	}

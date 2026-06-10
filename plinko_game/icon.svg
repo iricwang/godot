@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#16213e"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f4d03f"/>
+      <stop offset="100%" style="stop-color:#f39c12"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="128" height="128" rx="20" fill="url(#bg)"/>
+  
+  <!-- Pegs (Plinko board) -->
+  <g fill="#4a5568" opacity="0.6">
+    <circle cx="30" cy="35" r="6"/>
+    <circle cx="64" cy="35" r="6"/>
+    <circle cx="98" cy="35" r="6"/>
+    
+    <circle cx="47" cy="55" r="6"/>
+    <circle cx="81" cy="55" r="6"/>
+    
+    <circle cx="30" cy="75" r="6"/>
+    <circle cx="64" cy="75" r="6"/>
+    <circle cx="98" cy="75" r="6"/>
+    
+    <circle cx="47" cy="95" r="6"/>
+    <circle cx="81" cy="95" r="6"/>
+  </g>
+  
+  <!-- Ball -->
+  <circle cx="64" cy="20" r="10" fill="url(#gold)"/>
+  
+  <!-- Slots at bottom -->
+  <g fill="#e74c3c">
+    <rect x="18" y="108" width="16" height="15" rx="3"/>
+    <rect x="38" y="108" width="16" height="15" rx="3"/>
+    <rect x="58" y="108" width="16" height="15" rx="3" fill="#f1c40f"/>
+    <rect x="78" y="108" width="16" height="15" rx="3" fill="#f1c40f"/>
+    <rect x="98" y="108" width="16" height="15" rx="3"/>
+  </g>
+  
+  <!-- P text -->
+  <text x="64" y="135" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#f4d03f" text-anchor="middle">PLINKO</text>
+</svg>

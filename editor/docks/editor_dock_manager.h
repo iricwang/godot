@@ -83,6 +83,7 @@ class EditorDockManager : public Object {
 	GDCLASS(EditorDockManager, Object);
 
 private:
+	static constexpr int DOCK_SLOT_DYNAMIC_START = 1000;
 	friend class DockContextPopup;
 	friend class EditorDockDragHint;
 	friend class DockShortcutHandler;
@@ -99,7 +100,7 @@ private:
 	DockTabContainer *dock_slots[EditorDock::DOCK_SLOT_MAX] = {};
 	HashMap<int, DockTabContainer *> dynamic_dock_slots;
 	HashSet<int> dynamic_dock_slot_ids;
-	int next_dynamic_dock_slot = EditorDock::DOCK_SLOT_MAX;
+	int next_dynamic_dock_slot = DOCK_SLOT_DYNAMIC_START;
 	Vector<WindowWrapper *> dock_windows;
 	LocalVector<EditorDock *> all_docks;
 	HashSet<EditorDock *> dirty_docks;

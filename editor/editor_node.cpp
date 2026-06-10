@@ -64,6 +64,7 @@
 #include "editor/docks/history_dock.h"
 #include "editor/docks/import_dock.h"
 #include "editor/docks/inspector_dock.h"
+#include "editor/docks/node_palette_dock.h"
 #include "editor/docks/scene_tree_dock.h"
 #include "editor/docks/signals_dock.h"
 #include "editor/editor_data.h"
@@ -9175,6 +9176,9 @@ EditorNode::EditorNode() {
 
 	memnew(SceneTreeDock(scene_root, editor_selection, editor_data));
 	editor_dock_manager->add_dock(SceneTreeDock::get_singleton());
+
+	memnew(NodePaletteDock);
+	editor_dock_manager->add_dock(NodePaletteDock::get_singleton());
 
 	memnew(ImportDock);
 	editor_dock_manager->add_dock(ImportDock::get_singleton());

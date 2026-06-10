@@ -235,7 +235,7 @@ void register_editor_types() {
 	EditorPlugins::add_by_type<ControlEditorPlugin>();
 	EditorPlugins::add_by_type<CPUParticles3DEditorPlugin>();
 	EditorPlugins::add_by_type<CurveEditorPlugin>();
-	EditorPlugins::add_by_type<DevicePreviewPlugin>();
+	// Device preview resolution selection is shown in the Game workspace toolbar.
 	if (!Engine::get_singleton()->is_recovery_mode_hint()) {
 		EditorPlugins::add_by_type<DebugAdapterServer>();
 	}

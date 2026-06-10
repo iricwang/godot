@@ -134,6 +134,8 @@ class GameView : public VBoxContainer {
 		WINDOW_SEPARATOR_DYNAMIC_RANGE,
 		WINDOW_REQUEST_HDR_OUTPUT,
 		WINDOW_HDR_OUTPUT_ERROR,
+		PREVIEW_RESOLUTION_FREE,
+		PREVIEW_RESOLUTION_DEVICE_START = 1000,
 	};
 
 	enum EmbedSizeMode {
@@ -192,6 +194,7 @@ class GameView : public VBoxContainer {
 	MenuButton *camera_override_menu = nullptr;
 
 	HBoxContainer *embedding_hb = nullptr;
+	MenuButton *preview_resolution_menu = nullptr;
 	MenuButton *game_window_options_menu = nullptr;
 	Label *game_size_label = nullptr;
 	Control *game_size_placeholder = nullptr;
@@ -205,6 +208,8 @@ class GameView : public VBoxContainer {
 	int time_scale_index = DEFAULT_TIME_SCALE_INDEX;
 
 	Size2i game_window_size = Size2i(-1, -1);
+	Size2i preview_resolution;
+	String preview_resolution_device_name;
 	bool hdr_output_enabled = false;
 	float current_max_luminance = 0.0f;
 	float current_reference_luminance = 0.0f;
@@ -227,6 +232,10 @@ class GameView : public VBoxContainer {
 	void _select_mode_pressed(int p_option);
 	void _selection_options_menu_id_pressed(int p_id);
 	void _game_window_options_menu_menu_id_pressed(int p_id);
+	void _preview_resolution_menu_id_pressed(int p_id);
+	void _build_preview_resolution_menu();
+	void _update_preview_resolution_menu_label();
+	Size2i _get_embed_target_window_size() const;
 
 	void _reset_time_scales();
 	void _speed_state_menu_pressed(int p_id);

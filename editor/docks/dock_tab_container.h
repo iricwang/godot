@@ -128,6 +128,7 @@ public:
 	static Rect2 get_default_floating_dock_rect(EditorDock *p_dock);
 
 	DockTabContainer(int p_slot);
+	~DockTabContainer();
 };
 
 class SideDockTabContainer : public DockTabContainer {

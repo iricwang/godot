@@ -358,6 +358,8 @@ public:
 	void open_add_child_dialog();
 	void open_instance_child_dialog();
 
+	Node *add_node_by_class(const String &p_class_name, Node *p_parent, bool p_commit_action = true);
+
 	List<Node *> paste_nodes(bool p_paste_as_sibling = false);
 	void paste_node_as_replacement();
 	List<Node *> get_node_clipboard() const;

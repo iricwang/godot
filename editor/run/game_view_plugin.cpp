@@ -443,7 +443,8 @@ void GameView::_sessions_changed() {
 	active_sessions = 0;
 	Array sessions = debugger->get_sessions();
 	for (int i = 0; i < sessions.size(); i++) {
-		if (Object::cast_to<EditorDebuggerSession>(sessions[i])->is_active()) {
+		EditorDebuggerSession *session = Object::cast_to<EditorDebuggerSession>(sessions[i]);
+		if (session && session->is_active()) {
 			active_sessions++;
 		}
 	}
@@ -541,7 +542,7 @@ void GameView::_show_update_window_wrapper() {
 		screen = placement.screen;
 	}
 	Size2i target_size = _get_embed_target_window_size();
-	if (target_size != Size2i()) {
+	if ((_has_preview_resolution() || size == Size2i()) && target_size != Size2i()) {
 		size = target_size + size_diff_embedded_process + wrapped_margins_size;
 	}
 	window_wrapper->restore_window_from_saved_position(Rect2(position, size), screen, Rect2i());
@@ -788,6 +789,21 @@ void GameView::_preview_resolution_menu_id_pressed(int p_id) {
 	EditorSettings::get_singleton()->set_project_metadata("game_view", "preview_resolution_device", preview_resolution_device_name);
 	_build_preview_resolution_menu();
 	_update_preview_resolution_menu_label();
+	_update_preview_orientation_button();
+	_update_embed_window_size();
+	if (window_wrapper && window_wrapper->get_window_enabled()) {
+		_show_update_window_wrapper();
+	}
+	if (embedded_process) {
+		embedded_process->queue_update_embedded_process();
+	}
+}
+
+void GameView::_preview_orientation_toggled(bool p_pressed) {
+	preview_resolution_landscape = p_pressed;
+	EditorSettings::get_singleton()->set_project_metadata("game_view", "preview_resolution_landscape", preview_resolution_landscape);
+	_update_preview_orientation_button();
+	_update_preview_resolution_menu_label();
 	_update_embed_window_size();
 	if (window_wrapper && window_wrapper->get_window_enabled()) {
 		_show_update_window_wrapper();
@@ -820,14 +836,39 @@ void GameView::_update_preview_resolution_menu_label() {
 		preview_resolution_menu->set_text(TTRC("Project"));
 		preview_resolution_menu->set_tooltip_text(TTRC("Use the project window size for the embedded game preview."));
 	} else {
+		Size2i oriented_resolution = _apply_preview_orientation(preview_resolution);
 		preview_resolution_menu->set_text(preview_resolution_device_name);
-		preview_resolution_menu->set_tooltip_text(vformat(TTR("Preview Resolution: %s (%d×%d)"), preview_resolution_device_name, preview_resolution.x, preview_resolution.y));
+		preview_resolution_menu->set_tooltip_text(vformat(TTR("Preview Resolution: %s (%d×%d)"), preview_resolution_device_name, oriented_resolution.x, oriented_resolution.y));
 	}
 }
 
+void GameView::_update_preview_orientation_button() {
+	preview_orientation_button->set_pressed_no_signal(preview_resolution_landscape);
+	preview_orientation_button->set_text(preview_resolution_landscape ? TTRC("Landscape") : TTRC("Portrait"));
+	preview_orientation_button->set_disabled(!_has_preview_resolution());
+	preview_orientation_button->set_tooltip_text(_has_preview_resolution()
+			? (preview_resolution_landscape ? TTRC("Switch preview resolution to portrait orientation.") : TTRC("Switch preview resolution to landscape orientation."))
+			: TTRC("Select a device preview resolution to enable orientation switching."));
+}
+
+bool GameView::_has_preview_resolution() const {
+	return preview_resolution != Size2i();
+}
+
+Size2i GameView::_apply_preview_orientation(Size2i p_size) const {
+	if (p_size == Size2i() || p_size.x == p_size.y) {
+		return p_size;
+	}
+	const bool is_landscape = p_size.x > p_size.y;
+	if (preview_resolution_landscape != is_landscape) {
+		SWAP(p_size.x, p_size.y);
+	}
+	return p_size;
+}
+
 Size2i GameView::_get_embed_target_window_size() const {
-	if (preview_resolution != Size2i()) {
-		return preview_resolution;
+	if (_has_preview_resolution()) {
+		return _apply_preview_orientation(preview_resolution);
 	}
 	EditorRun::WindowPlacement placement = EditorRun::get_window_placement();
 	return placement.size;
@@ -1049,11 +1090,11 @@ void GameView::_update_embed_window_size() {
 		embedded_process->set_keep_aspect(false);
 
 	} else {
-		if (embed_size_mode == SIZE_MODE_FIXED || embed_size_mode == SIZE_MODE_KEEP_ASPECT) {
+		if (embed_size_mode == SIZE_MODE_FIXED || embed_size_mode == SIZE_MODE_KEEP_ASPECT || _has_preview_resolution()) {
 			// The embedded process control will need the desired window size.
 			embedded_process->set_window_size(_get_embed_target_window_size());
 		} else {
-			// Stretch... No need for the window size.
+			// Stretch without a preview preset... No need for the window size.
 			embedded_process->set_window_size(Size2i());
 		}
 		embedded_process->set_keep_aspect(embed_size_mode == SIZE_MODE_KEEP_ASPECT);
@@ -1240,7 +1281,12 @@ void GameView::_notification(int p_what) {
 						make_floating_on_play = EditorSettings::get_singleton()->get_project_metadata("game_view", "make_floating_on_play", true);
 					} break;
 				}
-				embed_size_mode = (EmbedSizeMode)(int)EditorSettings::get_singleton()->get_project_metadata("game_view", "embed_size_mode", SIZE_MODE_FIXED);
+				int stored_embed_size_mode = EditorSettings::get_singleton()->get_project_metadata("game_view", "embed_size_mode", SIZE_MODE_FIXED);
+				if (stored_embed_size_mode < SIZE_MODE_FIXED || stored_embed_size_mode > SIZE_MODE_STRETCH) {
+					stored_embed_size_mode = SIZE_MODE_FIXED;
+					EditorSettings::get_singleton()->set_project_metadata("game_view", "embed_size_mode", stored_embed_size_mode);
+				}
+				embed_size_mode = (EmbedSizeMode)stored_embed_size_mode;
 				_update_embed_menu_options();
 
 				EditorRunBar::get_singleton()->connect("play_pressed", callable_mp(this, &GameView::_play_pressed));
@@ -1430,9 +1476,11 @@ void GameView::_update_arguments_for_instance(int p_idx, List<String> &r_argumen
 		if (placement.position != Point2i(INT_MAX, INT_MAX)) {
 			rect.position = placement.position;
 		}
-		Size2i target_size = _get_embed_target_window_size();
-		if (target_size != Size2i()) {
-			rect.size = target_size;
+		if (embed_size_mode != SIZE_MODE_STRETCH || _has_preview_resolution()) {
+			Size2i target_size = _get_embed_target_window_size();
+			if (target_size != Size2i()) {
+				rect.size = target_size;
+			}
 		}
 	}
 
@@ -1678,12 +1726,14 @@ GameView::GameView(Ref<GameViewDebugger> p_debugger, EmbeddedProcessBase *p_embe
 	main_menu_fc->add_child(embedding_hb);
 
 	preview_resolution_device_name = EditorSettings::get_singleton()->get_project_metadata("game_view", "preview_resolution_device", String());
+	preview_resolution_landscape = EditorSettings::get_singleton()->get_project_metadata("game_view", "preview_resolution_landscape", false);
 	if (!preview_resolution_device_name.is_empty()) {
 		Ref<DeviceProfile> profile = DeviceDatabase::find_by_name(preview_resolution_device_name);
 		if (profile.is_valid()) {
 			preview_resolution = profile->get_resolution();
 		} else {
 			preview_resolution_device_name = String();
+			EditorSettings::get_singleton()->set_project_metadata("game_view", "preview_resolution_device", String());
 		}
 	}
 
@@ -1696,6 +1746,15 @@ GameView::GameView(Ref<GameViewDebugger> p_debugger, EmbeddedProcessBase *p_embe
 	preview_resolution_menu->get_popup()->connect(SceneStringName(id_pressed), callable_mp(this, &GameView::_preview_resolution_menu_id_pressed));
 	_build_preview_resolution_menu();
 	_update_preview_resolution_menu_label();
+
+	preview_orientation_button = memnew(Button);
+	embedding_hb->add_child(preview_orientation_button);
+	preview_orientation_button->set_toggle_mode(true);
+	preview_orientation_button->set_theme_type_variation("FlatButton");
+	preview_orientation_button->set_h_size_flags(SIZE_SHRINK_END);
+	preview_orientation_button->set_accessibility_name(TTRC("Preview Orientation"));
+	preview_orientation_button->connect(SceneStringName(toggled), callable_mp(this, &GameView::_preview_orientation_toggled));
+	_update_preview_orientation_button();
 
 	game_size_label = memnew(Label());
 	embedding_hb->add_child(game_size_label);

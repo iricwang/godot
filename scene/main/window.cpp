@@ -799,6 +799,19 @@ void Window::_clear_window() {
 	}
 }
 
+void Window::_deferred_accessibility_rect_update() {
+	ERR_MAIN_THREAD_GUARD;
+	accessibility_rect_update_pending = false;
+	if (window_id == DisplayServerEnums::INVALID_WINDOW_ID || DisplayServer::get_singleton()->has_feature(DisplayServerEnums::FEATURE_SELF_FITTING_WINDOWS)) {
+		return;
+	}
+	Vector2 sz_out = DisplayServer::get_singleton()->window_get_size_with_decorations(window_id);
+	Vector2 pos_out = DisplayServer::get_singleton()->window_get_position_with_decorations(window_id);
+	Vector2 sz_in = DisplayServer::get_singleton()->window_get_size(window_id);
+	Vector2 pos_in = DisplayServer::get_singleton()->window_get_position(window_id);
+	AccessibilityServer::get_singleton()->set_window_rect(window_id, Rect2(pos_out, sz_out), Rect2(pos_in, sz_in));
+}
+
 void Window::_rect_changed_callback(const Rect2i &p_callback) {
 	//we must always accept this as the truth
 	if (size == p_callback.size && position == p_callback.position) {
@@ -808,6 +821,7 @@ void Window::_rect_changed_callback(const Rect2i &p_callback) {
 	if (position != p_callback.position) {
 		position = p_callback.position;
 		_propagate_window_notification(this, NOTIFICATION_WM_POSITION_CHANGED);
+		_update_safe_area();
 	}
 
 	if (size != p_callback.size) {
@@ -815,11 +829,10 @@ void Window::_rect_changed_callback(const Rect2i &p_callback) {
 		_update_viewport_size();
 	}
 	if (window_id != DisplayServerEnums::INVALID_WINDOW_ID && !DisplayServer::get_singleton()->has_feature(DisplayServerEnums::FEATURE_SELF_FITTING_WINDOWS)) {
-		Vector2 sz_out = DisplayServer::get_singleton()->window_get_size_with_decorations(window_id);
-		Vector2 pos_out = DisplayServer::get_singleton()->window_get_position_with_decorations(window_id);
-		Vector2 sz_in = DisplayServer::get_singleton()->window_get_size(window_id);
-		Vector2 pos_in = DisplayServer::get_singleton()->window_get_position(window_id);
-		AccessibilityServer::get_singleton()->set_window_rect(window_id, Rect2(pos_out, sz_out), Rect2(pos_in, sz_in));
+		if (!accessibility_rect_update_pending) {
+			callable_mp(this, &Window::_deferred_accessibility_rect_update).call_deferred();
+			accessibility_rect_update_pending = true;
+		}
 	}
 	queue_accessibility_update();
 }
@@ -1299,6 +1312,103 @@ void Window::_update_window_size() {
 	_update_viewport_size();
 }
 
+real_t Window::_compute_effective_scale_factor() const {
+	if (content_scale_stretch != Window::CONTENT_SCALE_STRETCH_INTEGER) {
+		return content_scale_factor;
+	}
+	// We always want to make sure that the content scale factor is a whole
+	// number, else there will be pixel wobble no matter what.
+	real_t factor = Math::floor(content_scale_factor);
+	// A content scale factor of zero is pretty useless.
+	return MAX(factor, (real_t)1.0);
+}
+
+void Window::_compute_scale_sizes(Size2 p_video_mode, Size2 p_desired_res, Size2 &r_viewport_size, Size2 &r_screen_size) const {
+	float viewport_aspect = p_desired_res.aspect();
+	float video_mode_aspect = p_video_mode.aspect();
+
+	if (content_scale_aspect == CONTENT_SCALE_ASPECT_IGNORE || Math::is_equal_approx(viewport_aspect, video_mode_aspect)) {
+		// Same aspect or ignore aspect.
+		r_viewport_size = p_desired_res;
+		r_screen_size = p_video_mode;
+	} else if (viewport_aspect < video_mode_aspect) {
+		// Screen ratio is smaller vertically.
+		if (content_scale_aspect == CONTENT_SCALE_ASPECT_KEEP_HEIGHT || content_scale_aspect == CONTENT_SCALE_ASPECT_EXPAND) {
+			// Will stretch horizontally.
+			r_viewport_size.x = p_desired_res.y * video_mode_aspect;
+			r_viewport_size.y = p_desired_res.y;
+			r_screen_size = p_video_mode;
+		} else {
+			// Will need black bars.
+			r_viewport_size = p_desired_res;
+			r_screen_size.x = p_video_mode.y * viewport_aspect;
+			r_screen_size.y = p_video_mode.y;
+		}
+	} else {
+		// Screen ratio is smaller horizontally.
+		if (content_scale_aspect == CONTENT_SCALE_ASPECT_KEEP_WIDTH || content_scale_aspect == CONTENT_SCALE_ASPECT_EXPAND) {
+			// Will stretch vertically.
+			r_viewport_size.x = p_desired_res.x;
+			r_viewport_size.y = p_desired_res.x / video_mode_aspect;
+			r_screen_size = p_video_mode;
+		} else {
+			// Will need black bars.
+			r_viewport_size = p_desired_res;
+			r_screen_size.x = p_video_mode.x;
+			r_screen_size.y = p_video_mode.x / viewport_aspect;
+		}
+	}
+}
+
+Size2 Window::_apply_integer_stretch(Size2 p_screen_size, Size2 p_viewport_size) const {
+	if (content_scale_stretch != Window::CONTENT_SCALE_STRETCH_INTEGER) {
+		return p_screen_size;
+	}
+	Size2i screen_scale = (p_screen_size / p_viewport_size).floor();
+	int scale_factor = MIN(screen_scale.x, screen_scale.y);
+	if (scale_factor < 1) {
+		scale_factor = 1;
+	}
+	return p_viewport_size * scale_factor;
+}
+
+void Window::_compute_margin_offset(Size2 p_video_mode, Size2 p_screen_size, Size2 p_viewport_size, Size2 &r_margin) const {
+	r_margin = Size2();
+
+	if (p_screen_size.x < p_video_mode.x) {
+		r_margin.x = Math::round((p_video_mode.x - p_screen_size.x) / 2.0);
+	}
+
+	if (p_screen_size.y < p_video_mode.y) {
+		r_margin.y = Math::round((p_video_mode.y - p_screen_size.y) / 2.0);
+	}
+}
+
+void Window::_apply_content_scale_mode(Size2 p_screen_size, Size2 p_viewport_size, Size2 p_margin,
+		Size2i &r_final_size, Size2 &r_final_size_override, Rect2i &r_attach_rect) {
+	switch (content_scale_mode) {
+		case CONTENT_SCALE_MODE_DISABLED: {
+			// This case is handled before calling this function; left empty for completeness.
+		} break;
+		case CONTENT_SCALE_MODE_CANVAS_ITEMS: {
+			r_final_size = p_screen_size;
+			r_final_size_override = p_viewport_size / content_scale_factor;
+			r_attach_rect = Rect2(p_margin, p_screen_size);
+			window_transform.translate_local(p_margin);
+		} break;
+		case CONTENT_SCALE_MODE_VIEWPORT: {
+			r_final_size = (p_viewport_size / content_scale_factor).floor();
+			r_attach_rect = Rect2(p_margin, p_screen_size);
+			window_transform.translate_local(p_margin);
+			if (r_final_size.x != 0 && r_final_size.y != 0) {
+				Transform2D scale_transform;
+				scale_transform.scale(Vector2(r_attach_rect.size) / Vector2(r_final_size));
+				window_transform *= scale_transform;
+			}
+		} break;
+	}
+}
+
 void Window::_update_viewport_size() {
 	//update the viewport part
 
@@ -1314,115 +1424,30 @@ void Window::_update_viewport_size() {
 	Rect2i attach_to_screen_rect(Point2i(), size);
 	window_transform = Transform2D();
 
-	if (content_scale_stretch == Window::CONTENT_SCALE_STRETCH_INTEGER) {
-		// We always want to make sure that the content scale factor is a whole
-		// number, else there will be pixel wobble no matter what.
-		content_scale_factor = Math::floor(content_scale_factor);
-
-		// A content scale factor of zero is pretty useless.
-		if (content_scale_factor < 1) {
-			content_scale_factor = 1;
-		}
-	}
+	real_t effective_scale = _compute_effective_scale_factor();
 
 	if (content_scale_mode == CONTENT_SCALE_MODE_DISABLED || content_scale_size.x == 0 || content_scale_size.y == 0) {
 		final_size = size;
-		final_size_override = Size2(size) / content_scale_factor;
+		final_size_override = Size2(size) / effective_scale;
 	} else {
-		//actual screen video mode
+		// Actual screen video mode.
 		Size2 video_mode = size;
 		Size2 desired_res = content_scale_size;
 
 		Size2 viewport_size;
 		Size2 screen_size;
-
-		float viewport_aspect = desired_res.aspect();
-		float video_mode_aspect = video_mode.aspect();
-
-		if (content_scale_aspect == CONTENT_SCALE_ASPECT_IGNORE || Math::is_equal_approx(viewport_aspect, video_mode_aspect)) {
-			//same aspect or ignore aspect
-			viewport_size = desired_res;
-			screen_size = video_mode;
-		} else if (viewport_aspect < video_mode_aspect) {
-			// screen ratio is smaller vertically
-
-			if (content_scale_aspect == CONTENT_SCALE_ASPECT_KEEP_HEIGHT || content_scale_aspect == CONTENT_SCALE_ASPECT_EXPAND) {
-				//will stretch horizontally
-				viewport_size.x = desired_res.y * video_mode_aspect;
-				viewport_size.y = desired_res.y;
-				screen_size = video_mode;
-
-			} else {
-				//will need black bars
-				viewport_size = desired_res;
-				screen_size.x = video_mode.y * viewport_aspect;
-				screen_size.y = video_mode.y;
-			}
-		} else {
-			//screen ratio is smaller horizontally
-			if (content_scale_aspect == CONTENT_SCALE_ASPECT_KEEP_WIDTH || content_scale_aspect == CONTENT_SCALE_ASPECT_EXPAND) {
-				//will stretch horizontally
-				viewport_size.x = desired_res.x;
-				viewport_size.y = desired_res.x / video_mode_aspect;
-				screen_size = video_mode;
-
-			} else {
-				//will need black bars
-				viewport_size = desired_res;
-				screen_size.x = video_mode.x;
-				screen_size.y = video_mode.x / viewport_aspect;
-			}
-		}
+		_compute_scale_sizes(video_mode, desired_res, viewport_size, screen_size);
 
 		screen_size = screen_size.floor();
 		viewport_size = viewport_size.floor();
 
-		if (content_scale_stretch == Window::CONTENT_SCALE_STRETCH_INTEGER) {
-			Size2i screen_scale = (screen_size / viewport_size).floor();
-			int scale_factor = MIN(screen_scale.x, screen_scale.y);
-
-			if (scale_factor < 1) {
-				scale_factor = 1;
-			}
-
-			screen_size = viewport_size * scale_factor;
-		}
+		screen_size = _apply_integer_stretch(screen_size, viewport_size);
 
 		Size2 margin;
-		Size2 offset;
+		_compute_margin_offset(video_mode, screen_size, viewport_size, margin);
 
-		if (screen_size.x < video_mode.x) {
-			margin.x = Math::round((video_mode.x - screen_size.x) / 2.0);
-			offset.x = Math::round(margin.x * viewport_size.y / screen_size.y);
-		}
-
-		if (screen_size.y < video_mode.y) {
-			margin.y = Math::round((video_mode.y - screen_size.y) / 2.0);
-			offset.y = Math::round(margin.y * viewport_size.x / screen_size.x);
-		}
-
-		switch (content_scale_mode) {
-			case CONTENT_SCALE_MODE_DISABLED: {
-			} break;
-			case CONTENT_SCALE_MODE_CANVAS_ITEMS: {
-				final_size = screen_size;
-				final_size_override = viewport_size / content_scale_factor;
-				attach_to_screen_rect = Rect2(margin, screen_size);
-
-				window_transform.translate_local(margin);
-			} break;
-			case CONTENT_SCALE_MODE_VIEWPORT: {
-				final_size = (viewport_size / content_scale_factor).floor();
-				attach_to_screen_rect = Rect2(margin, screen_size);
-
-				window_transform.translate_local(margin);
-				if (final_size.x != 0 && final_size.y != 0) {
-					Transform2D scale_transform;
-					scale_transform.scale(Vector2(attach_to_screen_rect.size) / Vector2(final_size));
-					window_transform *= scale_transform;
-				}
-			} break;
-		}
+		_apply_content_scale_mode(screen_size, viewport_size, margin,
+				final_size, final_size_override, attach_to_screen_rect);
 	}
 
 	bool allocate = is_inside_tree() && visible && (window_id != DisplayServerEnums::INVALID_WINDOW_ID || embedder != nullptr);
@@ -1435,15 +1460,41 @@ void Window::_update_viewport_size() {
 	}
 
 	notification(NOTIFICATION_WM_SIZE_CHANGED);
+}
 
-	if (embedder) {
-		float scale = MIN(embedder->stretch_transform.get_scale().width, embedder->stretch_transform.get_scale().height);
-		Viewport::set_oversampling_override(scale);
-		Size2 s = Size2(final_size.width * scale, final_size.height * scale).ceil();
-		RS::get_singleton()->viewport_set_global_canvas_transform(get_viewport_rid(), global_canvas_transform * scale * content_scale_factor);
-		RS::get_singleton()->viewport_set_size(get_viewport_rid(), s.width, s.height, 1);
-		embedder->_sub_window_update(this);
+void Window::_update_safe_area() {
+	ERR_MAIN_THREAD_GUARD;
+
+	Rect2i safe_area = DisplayServer::get_singleton()->get_display_safe_area();
+	if (safe_area == Rect2i()) {
+		safe_area_margin = Rect2();
+		return;
 	}
+
+	Point2i window_pos;
+	Size2i window_size = size;
+	if (window_id != DisplayServerEnums::INVALID_WINDOW_ID) {
+		window_pos = DisplayServer::get_singleton()->window_get_position(window_id);
+	}
+
+	// Compute overlap between the window and the display safe area.
+	int margin_left = MAX(0, safe_area.position.x - window_pos.x);
+	int margin_top = MAX(0, safe_area.position.y - window_pos.y);
+	int margin_right = MAX(0, (window_pos.x + window_size.x) - (safe_area.position.x + safe_area.size.x));
+	int margin_bottom = MAX(0, (window_pos.y + window_size.y) - (safe_area.position.y + safe_area.size.y));
+
+	// Convert physical pixel margins to design coordinate margins.
+	real_t scale = MAX(content_scale_factor, (real_t)1.0);
+	safe_area_margin = Rect2(
+		margin_left / scale,
+		margin_top / scale,
+		margin_right / scale,
+		margin_bottom / scale);
+}
+
+Rect2 Window::get_safe_area_margin() const {
+	ERR_READ_THREAD_GUARD_V(Rect2());
+	return safe_area_margin;
 }
 
 void Window::_update_window_callbacks() {
@@ -3462,6 +3513,8 @@ void Window::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_content_scale_factor", "factor"), &Window::set_content_scale_factor);
 	ClassDB::bind_method(D_METHOD("get_content_scale_factor"), &Window::get_content_scale_factor);
 
+	ClassDB::bind_method(D_METHOD("get_safe_area_margin"), &Window::get_safe_area_margin);
+
 	ClassDB::bind_method(D_METHOD("set_mouse_passthrough_polygon", "polygon"), &Window::set_mouse_passthrough_polygon);
 	ClassDB::bind_method(D_METHOD("get_mouse_passthrough_polygon"), &Window::get_mouse_passthrough_polygon);
 
@@ -3596,6 +3649,7 @@ void Window::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "content_scale_aspect", PROPERTY_HINT_ENUM, "Ignore,Keep,Keep Width,Keep Height,Expand"), "set_content_scale_aspect", "get_content_scale_aspect");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "content_scale_stretch", PROPERTY_HINT_ENUM, "Fractional,Integer"), "set_content_scale_stretch", "get_content_scale_stretch");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "content_scale_factor", PROPERTY_HINT_RANGE, "0.5,8.0,0.01"), "set_content_scale_factor", "get_content_scale_factor");
+	ADD_PROPERTY(PropertyInfo(Variant::RECT2, "safe_area_margin", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_DEFAULT), "", "get_safe_area_margin");
 
 	ADD_GROUP("HDR Output", "hdr_output_");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "hdr_output_requested"), "set_hdr_output_requested", "is_hdr_output_requested");

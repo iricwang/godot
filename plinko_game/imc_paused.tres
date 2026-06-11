@@ -1,0 +1,17 @@
+[gd_resource type="EIMappingContext" format=3]
+
+[ext_resource type="EIAction" path="res://ia_resume.tres" id="1_qy4i2"]
+
+[sub_resource type="InputEventKey" id="InputEventKey_4sd0q"]
+keycode = 4194305
+physical_keycode = 4194305
+
+[resource]
+mappings = Array[Dictionary]([{
+"action": ExtResource("1_qy4i2"),
+"consumes": true,
+"event": SubResource("InputEventKey_4sd0q"),
+"modifiers": Array[EIModifier]([]),
+"triggers": Array[EITrigger]([])
+}])
+context_name = "IMC_Paused@20"

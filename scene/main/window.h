@@ -157,6 +157,7 @@ private:
 	ContentScaleAspect content_scale_aspect = CONTENT_SCALE_ASPECT_IGNORE;
 	ContentScaleStretch content_scale_stretch = CONTENT_SCALE_STRETCH_FRACTIONAL;
 	real_t content_scale_factor = 1.0;
+	Rect2 safe_area_margin;
 
 	RID accessibility_title_element;
 	RID accessibility_announcement_element;
@@ -184,6 +185,15 @@ private:
 	void _validate_limit_size();
 	void _update_viewport_size();
 	void _update_window_size();
+
+	// Content scale computation helpers (refactored from _update_viewport_size).
+	real_t _compute_effective_scale_factor() const;
+	void _compute_scale_sizes(Size2 p_video_mode, Size2 p_desired_res, Size2 &r_viewport_size, Size2 &r_screen_size) const;
+	Size2 _apply_integer_stretch(Size2 p_screen_size, Size2 p_viewport_size) const;
+	void _compute_margin_offset(Size2 p_video_mode, Size2 p_screen_size, Size2 p_viewport_size, Size2 &r_margin) const;
+	void _apply_content_scale_mode(Size2 p_screen_size, Size2 p_viewport_size, Size2 p_margin,
+			Size2i &r_final_size, Size2 &r_final_size_override, Rect2i &r_attach_rect);
+	void _update_safe_area();
 
 	void _propagate_window_notification(Node *p_node, int p_notification);
 
@@ -253,10 +263,12 @@ private:
 	void _window_input_text(const String &p_text, bool p_emit_signal = false);
 	void _window_drop_files(const Vector<String> &p_files);
 	void _rect_changed_callback(const Rect2i &p_callback);
+	void _deferred_accessibility_rect_update();
 	void _event_callback(DisplayServerEnums::WindowEvent p_event);
 	virtual bool _can_consume_input_events() const override;
 
 	bool mouse_in_window = false;
+	bool accessibility_rect_update_pending = false;
 	void _update_mouse_over(Vector2 p_pos) override;
 	void _mouse_leave_viewport() override;
 
@@ -407,6 +419,8 @@ public:
 
 	void set_content_scale_factor(real_t p_factor);
 	real_t get_content_scale_factor() const;
+
+	Rect2 get_safe_area_margin() const;
 
 	void set_nonclient_area(const Rect2i &p_rect);
 	Rect2i get_nonclient_area() const;

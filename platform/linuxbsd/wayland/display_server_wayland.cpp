@@ -1275,9 +1275,13 @@ Size2i DisplayServerWayland::window_get_size(DisplayServerEnums::WindowID p_wind
 Size2i DisplayServerWayland::window_get_size_with_decorations(DisplayServerEnums::WindowID p_window_id) const {
 	MutexLock mutex_lock(wayland_thread.mutex);
 
-	// I don't think there's a way of actually knowing the size of the window
-	// decoration in Wayland, at least in the case of SSDs, nor that it would be
-	// that useful in this case. We'll just return the main window's size.
+	// Wayland does not provide a reliable way to query window decoration sizes
+	// (CSD or SSD). The xdg-decoration protocol can hint whether the compositor
+	// uses server-side decorations, but it does not expose the actual dimensions.
+	// Therefore, this function returns the client-area size, which may differ
+	// from the true window size including decorations on compositors that use SSD.
+	// Callers should be aware that centering and sizing logic that depends on
+	// decoration extents may behave differently on Wayland compared to X11 or Windows.
 	ERR_FAIL_COND_V(!windows.has(p_window_id), Size2i());
 	return windows[p_window_id].rect.size;
 }

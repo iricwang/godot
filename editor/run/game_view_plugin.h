@@ -195,6 +195,7 @@ class GameView : public VBoxContainer {
 
 	HBoxContainer *embedding_hb = nullptr;
 	MenuButton *preview_resolution_menu = nullptr;
+	Button *preview_orientation_button = nullptr;
 	MenuButton *game_window_options_menu = nullptr;
 	Label *game_size_label = nullptr;
 	Control *game_size_placeholder = nullptr;
@@ -210,6 +211,7 @@ class GameView : public VBoxContainer {
 	Size2i game_window_size = Size2i(-1, -1);
 	Size2i preview_resolution;
 	String preview_resolution_device_name;
+	bool preview_resolution_landscape = false;
 	bool hdr_output_enabled = false;
 	float current_max_luminance = 0.0f;
 	float current_reference_luminance = 0.0f;
@@ -233,8 +235,12 @@ class GameView : public VBoxContainer {
 	void _selection_options_menu_id_pressed(int p_id);
 	void _game_window_options_menu_menu_id_pressed(int p_id);
 	void _preview_resolution_menu_id_pressed(int p_id);
+	void _preview_orientation_toggled(bool p_pressed);
 	void _build_preview_resolution_menu();
 	void _update_preview_resolution_menu_label();
+	void _update_preview_orientation_button();
+	bool _has_preview_resolution() const;
+	Size2i _apply_preview_orientation(Size2i p_size) const;
 	Size2i _get_embed_target_window_size() const;
 
 	void _reset_time_scales();

@@ -79,22 +79,34 @@ int DisplayServerIOS::screen_get_dpi(int p_screen) const {
 		}
 	}
 
-	// If device wasn't found in dictionary
-	// make a best guess from device metrics.
-	CGFloat scale = [UIScreen mainScreen].scale;
+	// If the device wasn't found in the dictionary, make a best guess from
+	// device metrics. Note: Apple does not expose a direct physical-DPI API,
+	// so this heuristic is based on typical values for known device families.
+	// The hard-coded dictionary above should be updated when new hardware is
+	// released to ensure accuracy.
+	UIScreen *screen = [UIScreen mainScreen];
+	CGFloat scale = screen.scale;
+	CGFloat nativeScale = screen.nativeScale;
 
 	UIUserInterfaceIdiom idiom = [UIDevice currentDevice].userInterfaceIdiom;
 
 	switch (idiom) {
-		case UIUserInterfaceIdiomPad:
-			return scale == 2 ? 264 : 132;
+		case UIUserInterfaceIdiomPad: {
+			// iPad: non-retina = 132, retina ~264, mini retina ~326.
+			if (scale >= 2) {
+				return nativeScale >= 2 ? 264 : 132;
+			}
+			return 132;
+		}
 		case UIUserInterfaceIdiomPhone: {
+			// iPhone: Plus/Max models may report scale==3 with nativeScale<3.
 			if (scale == 3) {
-				CGFloat nativeScale = [UIScreen mainScreen].nativeScale;
 				return nativeScale == 3 ? 458 : 401;
 			}
-
-			return 326;
+			if (scale >= 2) {
+				return 326;
+			}
+			return 163;
 		}
 		default:
 			return 72;

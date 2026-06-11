@@ -1,0 +1,7 @@
+[gd_resource type="EIAction" format=3]
+
+[sub_resource type="EITriggerPressed" id="EITriggerPressed_iwmve"]
+
+[resource]
+default_triggers = Array[EITrigger]([SubResource("EITriggerPressed_iwmve")])
+description = "[IA_Resume] Close pause overlay on Escape from paused, or Enter/Space from menu."

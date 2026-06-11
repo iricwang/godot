@@ -126,7 +126,6 @@
 #include "editor/scene/texture/texture_editor_plugin.h"
 #include "editor/scene/texture/texture_layered_editor_plugin.h"
 #include "editor/scene/texture/texture_region_editor_plugin.h"
-#include "editor/plugins/device_preview/device_preview_plugin.h"
 #include "editor/plugins/device_preview/device_profile.h"
 #include "editor/script/editor_script.h"
 #include "editor/script/editor_script_plugin.h"

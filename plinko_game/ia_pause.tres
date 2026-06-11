@@ -1,0 +1,7 @@
+[gd_resource type="EIAction" format=3]
+
+[sub_resource type="EITriggerPressed" id="EITriggerPressed_55iu2"]
+
+[resource]
+default_triggers = Array[EITrigger]([SubResource("EITriggerPressed_55iu2")])
+description = "[IA_Pause] Open pause overlay on Escape from gameplay."

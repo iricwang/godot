@@ -1,0 +1,7 @@
+[gd_resource type="EIAction" format=3]
+
+[sub_resource type="EITriggerPressed" id="EITriggerPressed_6qemv"]
+
+[resource]
+default_triggers = Array[EITrigger]([SubResource("EITriggerPressed_6qemv")])
+description = "[IA_Drop] Drop a ball on Space (Bool; default Pressed trigger)."

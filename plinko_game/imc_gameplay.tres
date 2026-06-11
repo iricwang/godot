@@ -1,0 +1,28 @@
+[gd_resource type="EIMappingContext" format=3]
+
+[ext_resource type="EIAction" path="res://ia_drop.tres" id="1_cvuid"]
+[ext_resource type="EIAction" path="res://ia_pause.tres" id="2_qcm7j"]
+
+[sub_resource type="InputEventKey" id="InputEventKey_tdhud"]
+keycode = 32
+physical_keycode = 32
+
+[sub_resource type="InputEventKey" id="InputEventKey_4sd0q"]
+keycode = 4194305
+physical_keycode = 4194305
+
+[resource]
+mappings = Array[Dictionary]([{
+"action": ExtResource("1_cvuid"),
+"consumes": false,
+"event": SubResource("InputEventKey_tdhud"),
+"modifiers": Array[EIModifier]([]),
+"triggers": Array[EITrigger]([])
+}, {
+"action": ExtResource("2_qcm7j"),
+"consumes": true,
+"event": SubResource("InputEventKey_4sd0q"),
+"modifiers": Array[EIModifier]([]),
+"triggers": Array[EITrigger]([])
+}])
+context_name = "IMC_Gameplay@10"

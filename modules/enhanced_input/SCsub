@@ -1,0 +1,48 @@
+#!/usr/bin/env python
+#
+# SCsub for the enhanced_input engine module.
+#
+# Build flow (Godot 4.7):
+#   1. Root SConstruct scans modules/* for SCsub files, auto-discovers this
+#      module. No manual registration in root SConstruct.
+#   2. modules/SCsub SConscripts this file, then collects env.modules_sources
+#      into libmodule_enhanced_input.a, which is linked into the godot binary.
+#   3. Each new .cpp added to core/ is picked up by the glob below.
+#
+
+from misc.utility.scons_hints import *
+
+Import("env")
+Import("env_modules")
+
+env_enhanced_input = env_modules.Clone()
+
+# Make engine headers (e.g. `core/object/class_db.h`, `scene/main/node.h`)
+# resolvable from this module's sources. Without this, the MSVC include
+# search path does not contain the engine root and `#include "core/..."`
+# style includes fail. The standard built-in modules (e.g. regex, jsonrpc)
+# don't need this because their sources live at the module root and include
+# only same-directory headers. We need both:
+#   * Dir("#")   — engine root, for `core/object/...` and `scene/...`
+#   * Dir(".")   — this module's root, for `core/ei_*.h`
+# so that `#include "core/ei_enums.h"` (in core/ei_subsystem.h) resolves
+# to modules/enhanced_input/core/ei_enums.h.
+env_enhanced_input.Append(CPPPATH=[Dir("#"), Dir(".")])
+
+# P1 sources: core/ei_value.cpp, core/ei_subsystem.cpp, register_types.cpp.
+# P2 added: core/ei_action.cpp, core/ei_modifier.cpp.
+# P3 added: modifiers/*.cpp.
+# P4 added: core/ei_trigger.cpp, triggers/*.cpp.
+# P7 added: editor/*.cpp — only compiled when the editor build is enabled
+# (mirrors modules/gridmap/SCsub). The editor plugin is opt-in via the
+# standard `env.editor_build` flag and does not affect headless / test runs.
+#
+# `add_source_files` only globs when the `files` argument is a string.
+# Each glob / file gets its own call so it's treated as a single argument.
+env_enhanced_input.add_source_files(env.modules_sources, "core/*.cpp")
+env_enhanced_input.add_source_files(env.modules_sources, "modifiers/*.cpp")
+env_enhanced_input.add_source_files(env.modules_sources, "triggers/*.cpp")
+env_enhanced_input.add_source_files(env.modules_sources, "register_types.cpp")
+
+if env.editor_build:
+    env_enhanced_input.add_source_files(env.modules_sources, "editor/*.cpp")

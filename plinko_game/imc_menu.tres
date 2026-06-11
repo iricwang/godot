@@ -1,0 +1,27 @@
+[gd_resource type="EIMappingContext" format=3]
+
+[ext_resource type="EIAction" path="res://ia_resume.tres" id="1_jaxwl"]
+
+[sub_resource type="InputEventKey" id="InputEventKey_tdhud"]
+keycode = 32
+physical_keycode = 32
+
+[sub_resource type="InputEventKey" id="InputEventKey_x50cr"]
+keycode = 4194309
+physical_keycode = 4194309
+
+[resource]
+mappings = Array[Dictionary]([{
+"action": ExtResource("1_jaxwl"),
+"consumes": true,
+"event": SubResource("InputEventKey_tdhud"),
+"modifiers": Array[EIModifier]([]),
+"triggers": Array[EITrigger]([])
+}, {
+"action": ExtResource("1_jaxwl"),
+"consumes": true,
+"event": SubResource("InputEventKey_x50cr"),
+"modifiers": Array[EIModifier]([]),
+"triggers": Array[EITrigger]([])
+}])
+context_name = "IMC_Menu"

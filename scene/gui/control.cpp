@@ -633,14 +633,45 @@ void Control::_validate_property(PropertyInfo &p_property) const {
 			p_property.usage ^= PROPERTY_USAGE_EDITOR;
 		}
 		bool use_custom_anchors = use_anchors && _get_anchors_layout_preset() == -1; // Custom "preset".
-		if (!use_custom_anchors && (p_property.name.begins_with("anchor_") || is_anchor_offset_property_name || p_property.name.begins_with("grow_"))) {
-			p_property.usage ^= PROPERTY_USAGE_EDITOR;
+
+		// Per-axis stretch test (anchors on that axis differ ⇒ that axis is
+		// driven by offsets + parent rect). Used to (1) re-expose the relevant
+		// `offset_*` fields on stretching axes even when not in custom-anchor
+		// mode (so *_WIDE / FULL_RECT presets show Left/Right or Top/Bottom),
+		// and (2) lock `position`/`size` in the inspector when either axis is
+		// driven by anchors so the user can't accidentally fight the layout.
+		bool stretch_x = data.anchor[SIDE_LEFT] != data.anchor[SIDE_RIGHT];
+		bool stretch_y = data.anchor[SIDE_TOP] != data.anchor[SIDE_BOTTOM];
+
+		bool hide_anchor_block = !use_custom_anchors && (p_property.name.begins_with("anchor_") || is_anchor_offset_property_name || p_property.name.begins_with("grow_"));
+		if (hide_anchor_block) {
+			// Re-allow the offsets that author the *stretching* edges, so users
+			// of *_WIDE / FULL_RECT presets can still edit Left/Top/Right/Bottom
+			// directly (Unity RectTool style). The non-stretching axis stays
+			// hidden — its position lives on `position`/`size` instead.
+			bool keep_visible = false;
+			if (use_anchors) {
+				if (stretch_x && (p_property.name == "offset_left" || p_property.name == "offset_right")) {
+					keep_visible = true;
+				}
+				if (stretch_y && (p_property.name == "offset_top" || p_property.name == "offset_bottom")) {
+					keep_visible = true;
+				}
+			}
+			if (!keep_visible) {
+				p_property.usage ^= PROPERTY_USAGE_EDITOR;
+			}
 		}
 
-		// In FULL_RECT preset the control fills its parent, so size and position
-		// are derived from anchors + parent rect. Lock them in the inspector to
-		// avoid confusion and the "size overridden after _ready()" warning.
-		if (use_anchors && _get_anchors_layout_preset() == (int)LayoutPreset::PRESET_FULL_RECT &&
+		// Lock `position` / `size` in the inspector whenever any axis is
+		// "stretching": those values are then derived from anchors + offsets +
+		// parent rect, and editing them prints the "size overridden after
+		// _ready()" warning. We use READ_ONLY rather than hiding because Vector2
+		// widgets can't selectively lock one component — when only one axis
+		// stretches, the user still benefits from seeing the runtime values.
+		// Covers PRESET_FULL_RECT, every *_WIDE preset, and any custom-anchor
+		// layout with at least one stretching axis.
+		if (use_anchors && (stretch_x || stretch_y) &&
 				(p_property.name == "size" || p_property.name == "position")) {
 			p_property.usage |= PROPERTY_USAGE_READ_ONLY;
 		}

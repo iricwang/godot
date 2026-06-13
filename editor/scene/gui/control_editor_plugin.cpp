@@ -35,6 +35,7 @@
 #include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/gui/editor_spin_slider.h"
+#include "editor/inspector/editor_properties.h"
 #include "editor/scene/canvas_item_editor_plugin.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/box_container.h"
@@ -882,6 +883,39 @@ bool EditorInspectorPluginControl::parse_property(Object *p_object, const Varian
 		EditorPropertyPivotOffsetRatio *prop_editor = memnew(EditorPropertyPivotOffsetRatio);
 		add_property_editor(p_path, prop_editor);
 		return true;
+	}
+
+	// Unity RectTool style: when *_WIDE / FULL_RECT (or any custom-anchor
+	// stretch) re-exposes the four `offset_*` fields as the actual rectangle
+	// edges, relabel them "Left / Top / Right / Bottom" instead of the default
+	// "Offset Left" etc. — they author the rect directly here, not an offset.
+	// Only applied when at least one axis is stretching (i.e. the value
+	// truly is the edge); on a non-stretching axis the field stays hidden by
+	// `Control::_validate_property`.
+	if (p_path == "offset_left" || p_path == "offset_top" || p_path == "offset_right" || p_path == "offset_bottom") {
+		bool stretch_x = control->get_anchor(SIDE_LEFT) != control->get_anchor(SIDE_RIGHT);
+		bool stretch_y = control->get_anchor(SIDE_TOP) != control->get_anchor(SIDE_BOTTOM);
+		bool is_x_edge = (p_path == "offset_left" || p_path == "offset_right");
+		bool is_y_edge = (p_path == "offset_top" || p_path == "offset_bottom");
+		bool relabel = (is_x_edge && stretch_x) || (is_y_edge && stretch_y);
+		if (relabel) {
+			EditorPropertyFloat *prop_editor = memnew(EditorPropertyFloat);
+			EditorPropertyRangeHint hint;
+			hint.suffix = "px";
+			prop_editor->setup(hint);
+			String new_label;
+			if (p_path == "offset_left") {
+				new_label = TTR("Left");
+			} else if (p_path == "offset_top") {
+				new_label = TTR("Top");
+			} else if (p_path == "offset_right") {
+				new_label = TTR("Right");
+			} else {
+				new_label = TTR("Bottom");
+			}
+			add_property_editor(p_path, prop_editor, false, new_label);
+			return true;
+		}
 	}
 
 	// Suppress all offset_transform_* sub-properties (except the enabled toggle)

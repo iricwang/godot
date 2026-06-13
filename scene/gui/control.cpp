@@ -636,6 +636,14 @@ void Control::_validate_property(PropertyInfo &p_property) const {
 		if (!use_custom_anchors && (p_property.name.begins_with("anchor_") || is_anchor_offset_property_name || p_property.name.begins_with("grow_"))) {
 			p_property.usage ^= PROPERTY_USAGE_EDITOR;
 		}
+
+		// In FULL_RECT preset the control fills its parent, so size and position
+		// are derived from anchors + parent rect. Lock them in the inspector to
+		// avoid confusion and the "size overridden after _ready()" warning.
+		if (use_anchors && _get_anchors_layout_preset() == (int)LayoutPreset::PRESET_FULL_RECT &&
+				(p_property.name == "size" || p_property.name == "position")) {
+			p_property.usage |= PROPERTY_USAGE_READ_ONLY;
+		}
 	}
 	if (!Engine::get_singleton()->is_editor_hint()) {
 		return;

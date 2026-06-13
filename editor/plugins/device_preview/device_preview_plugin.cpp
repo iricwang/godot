@@ -5,10 +5,14 @@
 #include "device_preview_plugin.h"
 #include "device_database.h"
 
+#include "core/config/project_settings.h"
 #include "core/object/callable_mp.h"
+#include "core/object/class_db.h"
+#include "core/os/os.h"
 #include "editor/editor_interface.h"
 #include "scene/gui/menu_button.h"
 #include "scene/gui/subviewport_container.h"
+#include "scene/main/scene_tree.h"
 #include "scene/main/window.h"
 
 void DevicePreviewPlugin::_build_menu() {
@@ -66,22 +70,96 @@ void DevicePreviewPlugin::_apply_preview(const Ref<DeviceProfile> &p_profile) {
 	SubViewport *scene_vp = ei->get_editor_viewport_2d();
 	ERR_FAIL_NULL(scene_vp);
 
-	Vector2i res = p_profile->get_resolution();
-
-	// Save the current viewport size so we can restore it later.
-	saved_viewport_size = scene_vp->get_size();
+	Vector2i res = _apply_preview_orientation(p_profile->get_resolution());
 
 	// Set the viewport to render at the device resolution.
-	// The editor's SubViewportContainer (stretch=true) scales the rendered
-	// output to fit the available area while preserving aspect ratio.
+	// The editor's SubViewportContainer (stretch=true) intercepts set_size
+	// (SubViewport::_internal_set_size is a no-op there), so size_2d_override
+	// + stretch is what actually drives the layout parent rect via the
+	// SubViewport's own stretch_transform. ProjectSettings + main Window
+	// below are the load-bearing pieces for Control re-layout.
 	scene_vp->set_size(res);
 	scene_vp->set_size_2d_override(res);
 	scene_vp->set_size_2d_override_stretch(true);
 
+	// Drive the 2D editor's "layout parent rect" through the same channel
+	// the running game uses: in-memory ProjectSettings + main Window
+	// content scale. Control::get_parent_anchorable_rect() has a TOOLS-mode
+	// fast path that reads `display/window/size/viewport_width/height`
+	// directly, so changing those is what actually re-anchors Container
+	// children. The main Window content scale is what makes the
+	// SubViewportContainer paint the device-sized 2D output at the right
+	// aspect ratio on screen.
+	{
+		ProjectSettings *ps = ProjectSettings::get_singleton();
+		// Snapshot only on the first device selection after Free — otherwise
+		// a device → device switch would clobber the user's real project
+		// settings with the previous device's resolution.
+		if (!_has_saved_state) {
+			saved_viewport_width = (int)ps->get_setting("display/window/size/viewport_width");
+			saved_viewport_height = (int)ps->get_setting("display/window/size/viewport_height");
+			saved_stretch_mode = ps->get_setting("display/window/stretch/mode");
+			saved_stretch_aspect = ps->get_setting("display/window/stretch/aspect");
+		}
+
+		ps->set_setting("display/window/size/viewport_width", res.x);
+		ps->set_setting("display/window/size/viewport_height", res.y);
+		ps->set_setting("display/window/stretch/mode", "canvas_items");
+		ps->set_setting("display/window/stretch/aspect", "keep");
+	}
+
+	if (SceneTree *tree = Object::cast_to<SceneTree>(OS::get_singleton()->get_main_loop())) {
+		if (Window *main = tree->get_root()) {
+			if (!_has_saved_state) {
+				saved_content_scale_size = main->get_content_scale_size();
+				saved_content_scale_mode = main->get_content_scale_mode();
+				saved_content_scale_aspect = main->get_content_scale_aspect();
+			}
+			main->set_content_scale_size(res);
+			main->set_content_scale_mode(Window::CONTENT_SCALE_MODE_CANVAS_ITEMS);
+			main->set_content_scale_aspect(Window::CONTENT_SCALE_ASPECT_KEEP);
+		}
+	}
+
+	_has_saved_state = true;
+
 	preview_active = true;
 }
 
+Vector2i DevicePreviewPlugin::_apply_preview_orientation(const Vector2i &p_size) const {
+	if (p_size == Size2i() || p_size.x == p_size.y) {
+		return p_size;
+	}
+	const bool is_landscape = p_size.x > p_size.y;
+	if (preview_resolution_landscape != is_landscape) {
+		Size2i swapped = p_size;
+		SWAP(swapped.x, swapped.y);
+		return swapped;
+	}
+	return p_size;
+}
+
 void DevicePreviewPlugin::_remove_preview() {
+	// Restore ProjectSettings + main Window before tearing down the viewport
+	// so a Control re-layout triggered by the viewport reset sees the
+	// correct (free) parent rect.
+	if (_has_saved_state) {
+		ProjectSettings *ps = ProjectSettings::get_singleton();
+		ps->set_setting("display/window/size/viewport_width", saved_viewport_width);
+		ps->set_setting("display/window/size/viewport_height", saved_viewport_height);
+		ps->set_setting("display/window/stretch/mode", saved_stretch_mode);
+		ps->set_setting("display/window/stretch/aspect", saved_stretch_aspect);
+
+		if (SceneTree *tree = Object::cast_to<SceneTree>(OS::get_singleton()->get_main_loop())) {
+			if (Window *main = tree->get_root()) {
+				main->set_content_scale_size(saved_content_scale_size);
+				main->set_content_scale_mode(saved_content_scale_mode);
+				main->set_content_scale_aspect(saved_content_scale_aspect);
+			}
+		}
+		_has_saved_state = false;
+	}
+
 	if (!preview_active) {
 		return;
 	}
@@ -93,13 +171,14 @@ void DevicePreviewPlugin::_remove_preview() {
 
 	SubViewport *scene_vp = ei->get_editor_viewport_2d();
 	if (scene_vp) {
-		// Restore the viewport to its previous (free) size.
-		scene_vp->set_size(saved_viewport_size);
 		scene_vp->set_size_2d_override(Size2i());
 		scene_vp->set_size_2d_override_stretch(false);
+		// Note: scene_vp->set_size(saved_viewport_size) is intentionally
+		// skipped. The SubViewportContainer parent has stretch=true, so
+		// SubViewport::set_size is a no-op there. The Container will resize
+		// the SubViewport to its own client rect on the next layout pass.
 	}
 
-	saved_viewport_size = Vector2i();
 	preview_active = false;
 }
 
@@ -138,6 +217,28 @@ void DevicePreviewPlugin::_notification(int p_what) {
 }
 
 void DevicePreviewPlugin::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_preview_resolution_landscape", "landscape"), &DevicePreviewPlugin::set_preview_resolution_landscape);
+	ClassDB::bind_method(D_METHOD("is_preview_resolution_landscape"), &DevicePreviewPlugin::is_preview_resolution_landscape);
+	ClassDB::bind_method(D_METHOD("get_preview_resolution"), &DevicePreviewPlugin::get_preview_resolution);
+}
+
+void DevicePreviewPlugin::set_preview_resolution_landscape(bool p_landscape) {
+	if (preview_resolution_landscape == p_landscape) {
+		return;
+	}
+	preview_resolution_landscape = p_landscape;
+	if (current_profile.is_valid()) {
+		_apply_preview(current_profile);
+	}
+	_update_toolbar_label();
+	_build_menu();
+}
+
+Vector2i DevicePreviewPlugin::get_preview_resolution() const {
+	if (current_profile.is_null() || !preview_active) {
+		return Size2i();
+	}
+	return _apply_preview_orientation(current_profile->get_resolution());
 }
 
 DevicePreviewPlugin::DevicePreviewPlugin() {

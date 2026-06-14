@@ -35,10 +35,12 @@
 #include "core/variant/typed_array.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/inspector/editor_resource_picker.h"
+#include "editor/themes/editor_scale.h"
 #include "scene/gui/button.h"
 #include "scene/gui/check_button.h"
 #include "scene/gui/dialogs.h"
 #include "scene/gui/label.h"
+#include "scene/gui/separator.h"
 
 #include "../core/ei_action.h"
 #include "../core/ei_mapping_context.h"
@@ -131,7 +133,7 @@ void EIMappingContextMappingsControl::_rebuild_rows() {
 
 		Label *event_label = memnew(Label);
 		event_label->set_text(_format_event_short(event));
-		event_label->set_size_flags(Control::SIZE_EXPAND_FILL);
+		event_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		event_label->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
 		row->add_child(event_label);
 
@@ -141,7 +143,7 @@ void EIMappingContextMappingsControl::_rebuild_rows() {
 
 		Label *action_label = memnew(Label);
 		action_label->set_text(_format_action_short(action));
-		action_label->set_size_flags(Control::SIZE_EXPAND_FILL);
+		action_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		action_label->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
 		row->add_child(action_label);
 

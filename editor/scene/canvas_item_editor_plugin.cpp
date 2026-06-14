@@ -63,7 +63,13 @@
 #include "scene/2d/skeleton_2d.h"
 #include "scene/2d/sprite_2d.h"
 #include "scene/gui/base_button.h"
+#include "scene/gui/check_box.h"
+#include "scene/gui/check_button.h"
+#include "scene/gui/color_picker.h"
 #include "scene/gui/flow_container.h"
+#include "scene/gui/label.h"
+#include "scene/gui/option_button.h"
+#include "scene/gui/spin_box.h"
 #include "scene/gui/grid_container.h"
 #include "scene/gui/rich_text_label.h"
 #include "scene/gui/separator.h"
@@ -74,6 +80,7 @@
 #include "scene/main/canvas_layer.h"
 #include "scene/main/scene_tree.h"
 #include "scene/main/timer.h"
+#include "scene/main/viewport.h"
 #include "scene/main/window.h"
 #include "scene/resources/packed_scene.h"
 #include "scene/resources/style_box_texture.h"
@@ -4086,6 +4093,39 @@ void CanvasItemEditor::_draw_axis() {
 	}
 }
 
+void CanvasItemEditor::_draw_resolution_guide() {
+	if (!EDITOR_GET("editors/2d/resolution_guide/enable")) {
+		return;
+	}
+
+	int width = EDITOR_GET("editors/2d/resolution_guide/width");
+	int height = EDITOR_GET("editors/2d/resolution_guide/height");
+	bool center_aligned = EDITOR_GET("editors/2d/resolution_guide/center_aligned");
+	Color color = EDITOR_GET("editors/2d/resolution_guide/color");
+
+	Point2 origin = center_aligned ? Point2(-width / 2.0, -height / 2.0) : Point2();
+	Rect2 canvas_rect(origin, Size2(width, height));
+	Rect2 rect = transform.xform(canvas_rect);
+
+	RID ci = viewport->get_canvas_item();
+
+	real_t border = MAX(1.0, EDSCALE);
+	RenderingServer::get_singleton()->canvas_item_add_rect(ci, Rect2(rect.position, Size2(rect.size.width, border)), color);
+	RenderingServer::get_singleton()->canvas_item_add_rect(ci, Rect2(rect.position + Point2(0, rect.size.height - border), Size2(rect.size.width, border)), color);
+	RenderingServer::get_singleton()->canvas_item_add_rect(ci, Rect2(rect.position, Size2(border, rect.size.height)), color);
+	RenderingServer::get_singleton()->canvas_item_add_rect(ci, Rect2(rect.position + Point2(rect.size.width - border, 0), Size2(border, rect.size.height)), color);
+
+	Ref<Font> font = get_theme_font(SceneStringName(font), SNAME("Label"));
+	int font_size = get_theme_font_size(SceneStringName(font_size), SNAME("Label"));
+	String label = vformat("%dx%d", width, height);
+	Size2 label_size = font->get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size);
+	Point2 label_pos = rect.position + Point2(4, -(label_size.height + 4));
+
+	Color bg_color(0, 0, 0, 0.6f);
+	RenderingServer::get_singleton()->canvas_item_add_rect(ci, Rect2(label_pos - Point2(2, 0), label_size + Size2(4, 2)), bg_color);
+	font->draw_string(ci, label_pos + Point2(0, font->get_ascent(font_size) + 1), label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color);
+}
+
 void CanvasItemEditor::_draw_invisible_nodes_positions(Node *p_node, const Transform2D &p_parent_xform, const Transform2D &p_canvas_xform) {
 	ERR_FAIL_NULL(p_node);
 
@@ -4289,6 +4329,7 @@ void CanvasItemEditor::_draw_viewport() {
 	_draw_grid();
 	_draw_ruler_tool();
 	_draw_axis();
+	_draw_resolution_guide();
 	if (EditorNode::get_singleton()->get_edited_scene()) {
 		_draw_locks_and_groups(EditorNode::get_singleton()->get_edited_scene());
 		_draw_invisible_nodes_positions(EditorNode::get_singleton()->get_edited_scene());
@@ -4378,6 +4419,190 @@ void CanvasItemEditor::_update_editor_settings() {
 
 	resample_delay = EDITOR_GET("editors/2d/auto_resample_delay");
 	resample_timer->set_wait_time(resample_delay);
+
+	_load_resolution_guide_settings();
+}
+
+void CanvasItemEditor::_load_resolution_guide_settings() {
+	if (!resolution_preset_button) {
+		return;
+	}
+
+	bool enable = EDITOR_GET("editors/2d/resolution_guide/enable");
+	int width = EDITOR_GET("editors/2d/resolution_guide/width");
+	int height = EDITOR_GET("editors/2d/resolution_guide/height");
+	Color color = EDITOR_GET("editors/2d/resolution_guide/color");
+	bool center_aligned = EDITOR_GET("editors/2d/resolution_guide/center_aligned");
+
+	resolution_preset_button->set_block_signals(true);
+	resolution_width_spin->set_block_signals(true);
+	resolution_height_spin->set_block_signals(true);
+	resolution_show_checkbox->set_block_signals(true);
+	resolution_color_button->set_block_signals(true);
+	resolution_center_button->set_block_signals(true);
+
+	resolution_show_checkbox->set_pressed(enable);
+	resolution_width_spin->set_value(width);
+	resolution_height_spin->set_value(height);
+	resolution_color_button->set_pick_color(color);
+	resolution_center_button->set_pressed(center_aligned);
+
+	int preset_index = 0;
+	if (width == 720 && height == 1280) {
+		preset_index = 1;
+	} else if (width == 1080 && height == 1920) {
+		preset_index = 2;
+	} else if (width == 1440 && height == 2560) {
+		preset_index = 3;
+	} else if (width == 1170 && height == 2532) {
+		preset_index = 4;
+	} else if (width == 1290 && height == 2796) {
+		preset_index = 5;
+	}
+	resolution_preset_button->select(preset_index);
+
+	resolution_preset_button->set_block_signals(false);
+	resolution_width_spin->set_block_signals(false);
+	resolution_height_spin->set_block_signals(false);
+	resolution_show_checkbox->set_block_signals(false);
+	resolution_color_button->set_block_signals(false);
+	resolution_center_button->set_block_signals(false);
+}
+
+void CanvasItemEditor::_apply_resolution_to_layout() {
+	int width = EDITOR_GET("editors/2d/resolution_guide/width");
+	int height = EDITOR_GET("editors/2d/resolution_guide/height");
+	if (width <= 0 || height <= 0) {
+		return;
+	}
+
+	// ProjectSettings.viewport_width/height is what Control::get_parent_anchorable_rect()
+	// reads in the editor's TOOLS special case (scene/gui/control.cpp).
+	// Update it first so that when we trigger the size_changed cascade below,
+	// the receiving Control nodes recompute their layout against the new
+	// resolution rather than the project's default (1152×648).
+	ProjectSettings *ps = ProjectSettings::get_singleton();
+
+	// Save the original project values on first application so they can be
+	// restored when the resolution preview is disabled or the scene changes.
+	if (!resolution_preview_has_saved_state) {
+		resolution_preview_saved_width = (int)ps->get_setting("display/window/size/viewport_width");
+		resolution_preview_saved_height = (int)ps->get_setting("display/window/size/viewport_height");
+		resolution_preview_has_saved_state = true;
+	}
+
+	ps->set_setting("display/window/size/viewport_width", width);
+	ps->set_setting("display/window/size/viewport_height", height);
+
+	// Touch the SubViewport's size_2d_override. set_size() is a no-op under
+	// the editor's SubViewportContainer (stretch=true) — the only way to
+	// make the SubViewport emit size_changed is to nudge size_2d_override,
+	// which goes through SubViewport::_set_size() directly. Each Control
+	// in the edited scene is connected to that signal via
+	// NOTIFICATION_ENTER_CANVAS, so this drives the re-layout.
+	EditorNode::get_singleton()->get_scene_root()->set_size_2d_override(Vector2i(width, height));
+	resolution_preview_active = true;
+}
+
+void CanvasItemEditor::_restore_resolution_layout() {
+	if (!resolution_preview_has_saved_state || !resolution_preview_active) {
+		return;
+	}
+
+	ProjectSettings *ps = ProjectSettings::get_singleton();
+	ps->set_setting("display/window/size/viewport_width", resolution_preview_saved_width);
+	ps->set_setting("display/window/size/viewport_height", resolution_preview_saved_height);
+
+	// Passing an empty size clears the override, letting the SubViewport
+	// fall back to its natural size from the SubViewportContainer.
+	EditorNode::get_singleton()->get_scene_root()->set_size_2d_override(Size2i());
+	resolution_preview_active = false;
+}
+
+void CanvasItemEditor::_scene_changed() {
+	// When the edited scene changes, restore the original ProjectSettings
+	// and clear the SubViewport size_2d_override so the new scene lays out
+	// at its natural resolution. The resolution guide overlay (if enabled)
+	// can still draw, but the layout will be the project's native size.
+	_restore_resolution_layout();
+	// Reset the saved-state flag so that the next call to
+	// _apply_resolution_to_layout() in the new scene re-saves the (now
+	// restored) values as the baseline to restore to.
+	resolution_preview_has_saved_state = false;
+}
+
+void CanvasItemEditor::_scene_closed() {
+	_scene_changed();
+}
+
+void CanvasItemEditor::_resolution_preset_selected(int p_index) {
+	int width = 1080;
+	int height = 1920;
+	switch (p_index) {
+		case 1:
+			width = 720;
+			height = 1280;
+			break;
+		case 2:
+			width = 1080;
+			height = 1920;
+			break;
+		case 3:
+			width = 1440;
+			height = 2560;
+			break;
+		case 4:
+			width = 1170;
+			height = 2532;
+			break;
+		case 5:
+			width = 1290;
+			height = 2796;
+			break;
+		default:
+			return;
+	}
+	EditorSettings::get_singleton()->set_setting("editors/2d/resolution_guide/width", width);
+	EditorSettings::get_singleton()->set_setting("editors/2d/resolution_guide/height", height);
+	_load_resolution_guide_settings();
+	_apply_resolution_to_layout();
+	update_viewport();
+}
+
+void CanvasItemEditor::_resolution_width_changed(double p_value) {
+	EditorSettings::get_singleton()->set_setting("editors/2d/resolution_guide/width", (int)p_value);
+	_load_resolution_guide_settings();
+	_apply_resolution_to_layout();
+	update_viewport();
+}
+
+void CanvasItemEditor::_resolution_height_changed(double p_value) {
+	EditorSettings::get_singleton()->set_setting("editors/2d/resolution_guide/height", (int)p_value);
+	_load_resolution_guide_settings();
+	_apply_resolution_to_layout();
+	update_viewport();
+}
+
+void CanvasItemEditor::_resolution_show_toggled(bool p_pressed) {
+	EditorSettings::get_singleton()->set_setting("editors/2d/resolution_guide/enable", p_pressed);
+	_load_resolution_guide_settings();
+	if (p_pressed) {
+		_apply_resolution_to_layout();
+	} else {
+		_restore_resolution_layout();
+	}
+	update_viewport();
+}
+
+void CanvasItemEditor::_resolution_color_changed(const Color &p_color) {
+	EditorSettings::get_singleton()->set_setting("editors/2d/resolution_guide/color", p_color);
+	update_viewport();
+}
+
+void CanvasItemEditor::_resolution_center_toggled(bool p_pressed) {
+	EditorSettings::get_singleton()->set_setting("editors/2d/resolution_guide/center_aligned", p_pressed);
+	_load_resolution_guide_settings();
+	update_viewport();
 }
 
 void CanvasItemEditor::_project_settings_changed() {
@@ -6021,6 +6246,64 @@ CanvasItemEditor::CanvasItemEditor() {
 
 	main_menu_hbox->add_child(memnew(VSeparator));
 
+	// Resolution guide toolbar.
+	HBoxContainer *resolution_guide_hb = memnew(HBoxContainer);
+	main_flow->add_child(resolution_guide_hb);
+
+	Label *resolution_guide_label = memnew(Label);
+	resolution_guide_label->set_text(TTRC("Res"));
+	resolution_guide_hb->add_child(resolution_guide_label);
+
+	resolution_preset_button = memnew(OptionButton);
+	resolution_preset_button->set_tooltip_text(TTRC("Resolution preset"));
+	resolution_preset_button->add_item(TTRC("Custom"), 0);
+	resolution_preset_button->add_item("720 x 1280", 1);
+	resolution_preset_button->add_item("1080 x 1920", 2);
+	resolution_preset_button->add_item("1440 x 2560", 3);
+	resolution_preset_button->add_item("1170 x 2532 (iPhone 14 Pro)", 4);
+	resolution_preset_button->add_item("1290 x 2796 (iPhone 15 Pro Max)", 5);
+	resolution_preset_button->connect(SceneStringName(item_selected), callable_mp(this, &CanvasItemEditor::_resolution_preset_selected));
+	resolution_guide_hb->add_child(resolution_preset_button);
+
+	resolution_width_spin = memnew(SpinBox);
+	resolution_width_spin->set_min(1);
+	resolution_width_spin->set_max(8192);
+	resolution_width_spin->set_step(1);
+	resolution_width_spin->set_suffix("px");
+	resolution_width_spin->set_tooltip_text(TTRC("Reference frame width"));
+	resolution_width_spin->connect(SceneStringName(value_changed), callable_mp(this, &CanvasItemEditor::_resolution_width_changed));
+	resolution_guide_hb->add_child(resolution_width_spin);
+
+	resolution_height_spin = memnew(SpinBox);
+	resolution_height_spin->set_min(1);
+	resolution_height_spin->set_max(8192);
+	resolution_height_spin->set_step(1);
+	resolution_height_spin->set_suffix("px");
+	resolution_height_spin->set_tooltip_text(TTRC("Reference frame height"));
+	resolution_height_spin->connect(SceneStringName(value_changed), callable_mp(this, &CanvasItemEditor::_resolution_height_changed));
+	resolution_guide_hb->add_child(resolution_height_spin);
+
+	resolution_show_checkbox = memnew(CheckBox);
+	resolution_show_checkbox->set_text(TTRC("Show"));
+	resolution_show_checkbox->set_tooltip_text(TTRC("Show resolution guide"));
+	resolution_show_checkbox->connect(SceneStringName(toggled), callable_mp(this, &CanvasItemEditor::_resolution_show_toggled));
+	resolution_guide_hb->add_child(resolution_show_checkbox);
+
+	resolution_color_button = memnew(ColorPickerButton);
+	resolution_color_button->set_tooltip_text(TTRC("Resolution guide color"));
+	resolution_color_button->set_edit_alpha(true);
+	resolution_color_button->get_popup()->connect("about_to_popup", callable_mp(EditorNode::get_singleton(), &EditorNode::setup_color_picker).bind(resolution_color_button->get_picker()));
+	resolution_color_button->connect("color_changed", callable_mp(this, &CanvasItemEditor::_resolution_color_changed));
+	resolution_guide_hb->add_child(resolution_color_button);
+
+	resolution_center_button = memnew(CheckButton);
+	resolution_center_button->set_text(TTRC("Center"));
+	resolution_center_button->set_tooltip_text(TTRC("Center the reference frame on the origin"));
+	resolution_center_button->connect(SceneStringName(toggled), callable_mp(this, &CanvasItemEditor::_resolution_center_toggled));
+	resolution_guide_hb->add_child(resolution_center_button);
+
+	_load_resolution_guide_settings();
+
 	// Contextual toolbars.
 	context_toolbar_panel = memnew(PanelContainer);
 	context_toolbar_hbox = memnew(HBoxContainer);
@@ -6178,6 +6461,8 @@ void CanvasItemEditorPlugin::_notification(int p_what) {
 		case NOTIFICATION_ENTER_TREE: {
 			connect("scene_changed", callable_mp((CanvasItem *)canvas_item_editor->get_viewport_control(), &CanvasItem::queue_redraw).unbind(1));
 			connect("scene_closed", callable_mp((CanvasItem *)canvas_item_editor->get_viewport_control(), &CanvasItem::queue_redraw).unbind(1));
+			connect("scene_changed", callable_mp(canvas_item_editor, &CanvasItemEditor::_scene_changed));
+			connect("scene_closed", callable_mp(canvas_item_editor, &CanvasItemEditor::_scene_closed));
 		} break;
 	}
 }

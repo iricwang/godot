@@ -1011,6 +1011,13 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	EDITOR_SETTING_BASIC(Variant::FLOAT, PROPERTY_HINT_RANGE, "editors/2d/ruler_width", 16.0, "12.0,30.0,1.0")
 	EDITOR_SETTING(Variant::FLOAT, PROPERTY_HINT_RANGE, "editors/2d/auto_resample_delay", 0.3, "0.1,2,0.1")
 
+	// 2D: Resolution guide
+	EDITOR_SETTING(Variant::BOOL, PROPERTY_HINT_NONE, "editors/2d/resolution_guide/enable", true, "")
+	EDITOR_SETTING(Variant::INT, PROPERTY_HINT_RANGE, "editors/2d/resolution_guide/width", 1080, "1,8192,1")
+	EDITOR_SETTING(Variant::INT, PROPERTY_HINT_RANGE, "editors/2d/resolution_guide/height", 1920, "1,8192,1")
+	EDITOR_SETTING(Variant::COLOR, PROPERTY_HINT_NONE, "editors/2d/resolution_guide/color", Color(0.0, 0.8, 1.0, 0.6), "")
+	EDITOR_SETTING(Variant::BOOL, PROPERTY_HINT_NONE, "editors/2d/resolution_guide/center_aligned", true, "")
+
 	// Bone mapper (BoneMapEditorPlugin)
 	_initial_set("editors/bone_mapper/handle_colors/unset", Color(0.3, 0.3, 0.3));
 	_initial_set("editors/bone_mapper/handle_colors/set", Color(0.1, 0.6, 0.25));

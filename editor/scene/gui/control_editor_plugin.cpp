@@ -885,13 +885,12 @@ bool EditorInspectorPluginControl::parse_property(Object *p_object, const Varian
 		return true;
 	}
 
-	// Unity RectTool style: when *_WIDE / FULL_RECT (or any custom-anchor
-	// stretch) re-exposes the four `offset_*` fields as the actual rectangle
-	// edges, relabel them "Left / Top / Right / Bottom" instead of the default
-	// "Offset Left" etc. — they author the rect directly here, not an offset.
-	// Only applied when at least one axis is stretching (i.e. the value
-	// truly is the edge); on a non-stretching axis the field stays hidden by
-	// `Control::_validate_property`.
+	// Unity RectTool style: when an axis is stretching the corresponding
+	// `offset_*` fields actually author the rectangle's edges, so relabel them
+	// to "Left / Top / Right / Bottom" instead of the default "Offset Left"
+	// etc. On a non-stretching axis we fall through (return false) and the
+	// inspector renders the default widget keeping the "Offset *" label,
+	// which correctly conveys that the value is a delta from the anchor.
 	if (p_path == "offset_left" || p_path == "offset_top" || p_path == "offset_right" || p_path == "offset_bottom") {
 		bool stretch_x = control->get_anchor(SIDE_LEFT) != control->get_anchor(SIDE_RIGHT);
 		bool stretch_y = control->get_anchor(SIDE_TOP) != control->get_anchor(SIDE_BOTTOM);

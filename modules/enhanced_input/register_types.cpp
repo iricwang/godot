@@ -57,7 +57,7 @@
 // by `env.editor_build` in SCsub, so a non-editor binary linking
 // against this module never sees EditorInspectorPlugin / EditorPlugin.
 #include "editor/ei_editor_plugin.h"
-#include "editor/plugins/editor_plugins.h"
+#include "editor/plugins/editor_plugin.h"
 #endif
 
 // P1: EISubsystem lifecycle.
@@ -152,8 +152,8 @@ void initialize_enhanced_input_module(ModuleInitializationLevel p_level) {
 		// constructor instantiates an EIInspectorPlugin (for EIMappingContext)
 		// and adds it via add_inspector_plugin(). EditorPlugins::add_by_type<>
 		// instantiates the plugin and the engine takes ownership.
-		GDREGISTER_CLASS(ei::EIEditorPlugin);
-		EditorPlugins::add_by_type<ei::EIEditorPlugin>();
+		GDREGISTER_CLASS(EIEditorPlugin);
+		EditorPlugins::add_by_type<EIEditorPlugin>();
 	}
 #endif
 }

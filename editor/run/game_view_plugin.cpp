@@ -1491,10 +1491,15 @@ void GameView::_update_arguments_for_instance(int p_idx, List<String> &r_argumen
 }
 
 void GameView::_window_close_request() {
+	// Always stop the embedded process timers first. The X-button path on the floating
+	// window already hid and reparented the wrapper before this signal fires, so
+	// `get_window_enabled()` is `false` here and the legacy guarded branch below
+	// would skip the reset, leaving the 100 ms timers ticking on a half-torn-down
+	// state (with `embedded_process->window` momentarily stale during reparent).
+	embedded_process->reset_timers();
+
 	if (window_wrapper->get_window_enabled()) {
-		// Stop the embedded process timer before closing the window wrapper,
-		// so the signal to focus EDITOR_GAME isn't sent when the window is not enabled.
-		embedded_process->reset_timers();
+		// Re-entry guard: the close was triggered programmatically (not from the OS X button).
 		window_wrapper->set_window_enabled(false);
 	}
 

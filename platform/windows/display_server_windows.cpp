@@ -3648,34 +3648,40 @@ Error DisplayServerWindows::remove_embedded_process(ProcessID p_pid) {
 	// embedded window is closed. When the embedded window is closed while it has focus,
 	// the parent window (the editor) does not become active. It appears focused but is not truly activated.
 	// Opening a new window and closing it forces Windows to set the focus and activation correctly.
-	DWORD style = WS_POPUP | WS_VISIBLE;
-	DWORD style_ex = WS_EX_TOPMOST;
+	// Skip the workaround entirely if the parent HWND is no longer valid (e.g. the floating
+	// game window's HWND was destroyed before this cleanup runs), which would otherwise
+	// pass an invalid owner to CreateWindowExW or SetForegroundWindow and could crash.
+	if (IsWindow(ep->parent_window_handle)) {
+		DWORD style = WS_POPUP | WS_VISIBLE;
+		DWORD style_ex = WS_EX_TOPMOST;
 
-	WNDCLASSW wcTemp = {};
-	wcTemp.lpfnWndProc = DefWindowProcW;
-	wcTemp.hInstance = GetModuleHandle(nullptr);
-	wcTemp.lpszClassName = L"Engine temp window";
-	RegisterClassW(&wcTemp);
+		WNDCLASSW wcTemp = {};
+		wcTemp.lpfnWndProc = DefWindowProcW;
+		wcTemp.hInstance = GetModuleHandle(nullptr);
+		wcTemp.lpszClassName = L"Engine temp window";
+		RegisterClassW(&wcTemp);
 
-	HWND hWnd = CreateWindowExW(
-			style_ex,
-			L"Engine temp window", L"",
-			style,
-			0,
-			0,
-			1,
-			1,
-			ep->parent_window_handle,
-			nullptr,
-			GetModuleHandle(nullptr),
-			nullptr);
+		HWND hWnd = CreateWindowExW(
+				style_ex,
+				L"Engine temp window", L"",
+				style,
+				0,
+				0,
+				1,
+				1,
+				ep->parent_window_handle,
+				nullptr,
+				GetModuleHandle(nullptr),
+				nullptr);
 
-	SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE);
+		if (hWnd) {
+			SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE);
+			DestroyWindow(hWnd);
+		}
+		UnregisterClassW(L"Engine temp window", GetModuleHandle(nullptr));
 
-	DestroyWindow(hWnd);
-	UnregisterClassW(L"Engine temp window", GetModuleHandle(nullptr));
-
-	SetForegroundWindow(ep->parent_window_handle);
+		SetForegroundWindow(ep->parent_window_handle);
+	}
 
 	embedded_processes.erase(p_pid);
 	memdelete(ep);

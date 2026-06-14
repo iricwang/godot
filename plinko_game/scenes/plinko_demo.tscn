@@ -1,8 +1,8 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene format=3 uid="uid://bh6nnos76wekh"]
 
-[ext_resource type="Script" path="res://scenes/plinko_demo.gd" id="1_demo"]
+[ext_resource type="Script" uid="uid://doux0lvvlvyws" path="res://scenes/plinko_demo.gd" id="1_demo"]
 
-[node name="PlinkoDemo" type="Control"]
+[node name="PlinkoDemo" type="Control" unique_id=1423442984]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -11,7 +11,7 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_demo")
 
-[node name="Background" type="ColorRect" parent="."]
+[node name="Background" type="ColorRect" parent="." unique_id=1656193008]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -20,7 +20,7 @@ grow_horizontal = 2
 grow_vertical = 2
 color = Color(0.1, 0.1, 0.13, 1)
 
-[node name="VBox" type="VBoxContainer" parent="."]
+[node name="VBox" type="VBoxContainer" parent="." unique_id=994376093]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -33,63 +33,63 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 12
 
-[node name="TitleLabel" type="Label" parent="VBox"]
+[node name="TitleLabel" type="Label" parent="VBox" unique_id=1913189491]
 layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.95, 0.7, 1)
+theme_override_font_sizes/font_size = 28
 text = "Enhanced Input — P10 Demo (Plinko)"
 horizontal_alignment = 1
-theme_override_font_sizes/font_size = 28
-theme_override_colors/font_color = Color(1, 0.95, 0.7, 1)
 
-[node name="StatusLabel" type="Label" parent="VBox"]
+[node name="StatusLabel" type="Label" parent="VBox" unique_id=1751462348]
 layout_mode = 2
-text = "Status: booting…"
-theme_override_font_sizes/font_size = 18
 theme_override_colors/font_color = Color(0.85, 0.85, 0.95, 1)
+theme_override_font_sizes/font_size = 18
+text = "Status: booting…"
 
-[node name="HintLabel" type="Label" parent="VBox"]
+[node name="HintLabel" type="Label" parent="VBox" unique_id=1601248627]
 layout_mode = 2
+theme_override_colors/font_color = Color(0.65, 0.65, 0.75, 1)
+theme_override_font_sizes/font_size = 14
 text = "Keys: Space = Drop (Gameplay) / Resume (Menu/Paused).  Esc = Pause (Gameplay) / Resume (Paused).  Enter = Resume (Menu)."
 autowrap_mode = 2
-theme_override_font_sizes/font_size = 14
-theme_override_colors/font_color = Color(0.65, 0.65, 0.75, 1)
 
-[node name="LogLabel" type="RichTextLabel" parent="VBox"]
+[node name="LogLabel" type="RichTextLabel" parent="VBox" unique_id=917867245]
+custom_minimum_size = Vector2(0, 320)
 layout_mode = 2
 size_flags_vertical = 3
+focus_mode = 2
+theme_override_colors/default_color = Color(0.92, 0.92, 0.95, 1)
+theme_override_font_sizes/normal_font_size = 14
 bbcode_enabled = true
 scroll_following = true
 selection_enabled = true
-fit_content = false
-custom_minimum_size = Vector2(0, 320)
-theme_override_font_sizes/normal_font_size = 14
-theme_override_colors/default_color = Color(0.92, 0.92, 0.95, 1)
 
-[node name="Buttons" type="HBoxContainer" parent="VBox"]
+[node name="Buttons" type="HBoxContainer" parent="VBox" unique_id=1650634021]
 layout_mode = 2
-alignment = 1
 theme_override_constants/separation = 12
+alignment = 1
 
-[node name="PushMenuBtn" type="Button" parent="VBox/Buttons"]
+[node name="PushMenuBtn" type="Button" parent="VBox/Buttons" unique_id=876047501]
 custom_minimum_size = Vector2(140, 44)
 layout_mode = 2
 text = "Menu mode"
 
-[node name="PushGameplayBtn" type="Button" parent="VBox/Buttons"]
+[node name="PushGameplayBtn" type="Button" parent="VBox/Buttons" unique_id=538562679]
 custom_minimum_size = Vector2(140, 44)
 layout_mode = 2
 text = "Gameplay mode"
 
-[node name="PushPausedBtn" type="Button" parent="VBox/Buttons"]
+[node name="PushPausedBtn" type="Button" parent="VBox/Buttons" unique_id=1124287]
 custom_minimum_size = Vector2(140, 44)
 layout_mode = 2
 text = "Push Paused"
 
-[node name="PopBtn" type="Button" parent="VBox/Buttons"]
+[node name="PopBtn" type="Button" parent="VBox/Buttons" unique_id=2100168779]
 custom_minimum_size = Vector2(140, 44)
 layout_mode = 2
 text = "Pop top"
 
-[node name="ClearBtn" type="Button" parent="VBox/Buttons"]
+[node name="ClearBtn" type="Button" parent="VBox/Buttons" unique_id=1973327654]
 custom_minimum_size = Vector2(140, 44)
 layout_mode = 2
 text = "Clear all"

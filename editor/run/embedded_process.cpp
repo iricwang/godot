@@ -51,6 +51,14 @@ void EmbeddedProcessBase::_notification(int p_what) {
 			transp_enabled = GLOBAL_GET("display/window/per_pixel_transparency/allowed");
 			clear_color = GLOBAL_GET("rendering/environment/defaults/default_clear_color");
 		} break;
+		case NOTIFICATION_EXIT_TREE: {
+			// Clear the cached window pointer when leaving the tree so any timer
+			// or callback that fires before NOTIFICATION_ENTER_TREE refreshes it
+			// (e.g. during reparent triggered by closing a floating game window)
+			// hits the existing `if (window)` guards instead of dereferencing a
+			// stale pointer.
+			window = nullptr;
+		} break;
 		case NOTIFICATION_DRAW: {
 			_draw();
 		} break;

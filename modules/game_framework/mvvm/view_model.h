@@ -10,7 +10,7 @@
 #include "observable_property.h"
 
 class Node;
-class PropertyInfo;
+struct PropertyInfo;
 
 // Base class for view models. Holds named ObservableProperty values. GDScript subclasses add business logic and
 // command methods. Properties are created lazily on first access.

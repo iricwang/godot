@@ -37,6 +37,9 @@ class AcceptDialog;
 class Button;
 class ButtonGroup;
 class CanvasItemEditorViewport;
+class CheckBox;
+class CheckButton;
+class ColorPickerButton;
 class ConfirmationDialog;
 class EditorData;
 class EditorSelection;
@@ -44,8 +47,10 @@ class EditorZoomWidget;
 class HScrollBar;
 class HSplitContainer;
 class MenuButton;
+class OptionButton;
 class PanelContainer;
 class RichTextLabel;
+class SpinBox;
 class StyleBoxTexture;
 class Timer;
 class ViewPanner;
@@ -368,6 +373,22 @@ private:
 	HBoxContainer *animation_hb = nullptr;
 	MenuButton *animation_menu = nullptr;
 
+	// Resolution guide toolbar.
+	OptionButton *resolution_preset_button = nullptr;
+	SpinBox *resolution_width_spin = nullptr;
+	SpinBox *resolution_height_spin = nullptr;
+	CheckBox *resolution_show_checkbox = nullptr;
+	ColorPickerButton *resolution_color_button = nullptr;
+	CheckButton *resolution_center_button = nullptr;
+
+	// Save/restore state for resolution preview, so ProjectSettings and
+	// SubViewport size_2d_override are properly restored when the preview
+	// is disabled or the scene changes.
+	bool resolution_preview_has_saved_state = false;
+	bool resolution_preview_active = false;
+	int resolution_preview_saved_width = 1152;
+	int resolution_preview_saved_height = 648;
+
 	Button *key_loc_button = nullptr;
 	Button *key_rot_button = nullptr;
 	Button *key_scale_button = nullptr;
@@ -443,6 +464,25 @@ private:
 	void _adjust_new_node_position(Node *p_node);
 	void _reset_create_position();
 	void _update_editor_settings();
+
+	void _resolution_preset_selected(int p_index);
+	void _resolution_width_changed(double p_value);
+	void _resolution_height_changed(double p_value);
+	void _resolution_show_toggled(bool p_pressed);
+	void _resolution_color_changed(const Color &p_color);
+	void _resolution_center_toggled(bool p_pressed);
+	void _load_resolution_guide_settings();
+	// Re-anchor the edited scene's Control subtree so it lays out at the
+	// current resolution guide size. ProjectSettings viewport_width/height
+	// is the TOOLS-mode fast path Control::get_parent_anchorable_rect()
+	// reads, so updating it before triggering the size_changed cascade is
+	// what actually re-anchors Container children.
+	void _apply_resolution_to_layout();
+	// Restore the original ProjectSettings viewport size and clear the
+	// SubViewport size_2d_override, undoing a previous _apply_resolution_to_layout().
+	void _restore_resolution_layout();
+	void _scene_changed();
+	void _scene_closed();
 	void _prepare_grid_menu();
 	void _on_grid_menu_id_pressed(int p_id);
 	void _reset_transform(TransformType p_type);
@@ -489,6 +529,7 @@ private:
 	void _draw_control_helpers(Control *control);
 	void _draw_selection();
 	void _draw_axis();
+	void _draw_resolution_guide();
 	void _draw_invisible_nodes_positions(Node *p_node, const Transform2D &p_parent_xform = Transform2D(), const Transform2D &p_canvas_xform = Transform2D());
 	void _draw_locks_and_groups(Node *p_node, const Transform2D &p_parent_xform = Transform2D(), const Transform2D &p_canvas_xform = Transform2D());
 	void _draw_hover();

@@ -6461,7 +6461,7 @@ void CanvasItemEditorPlugin::_notification(int p_what) {
 		case NOTIFICATION_ENTER_TREE: {
 			connect("scene_changed", callable_mp((CanvasItem *)canvas_item_editor->get_viewport_control(), &CanvasItem::queue_redraw).unbind(1));
 			connect("scene_closed", callable_mp((CanvasItem *)canvas_item_editor->get_viewport_control(), &CanvasItem::queue_redraw).unbind(1));
-			connect("scene_changed", callable_mp(canvas_item_editor, &CanvasItemEditor::_scene_changed));
+			connect("scene_changed", callable_mp(canvas_item_editor, &CanvasItemEditor::_scene_changed).unbind(1));
 			connect("scene_closed", callable_mp(canvas_item_editor, &CanvasItemEditor::_scene_closed));
 		} break;
 	}

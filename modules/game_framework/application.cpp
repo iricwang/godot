@@ -215,13 +215,13 @@ void Application::shutdown() {
 		memdelete(scene_service);
 		scene_service = nullptr;
 	}
-	if (resource_manager) {
-		memdelete(resource_manager);
-		resource_manager = nullptr;
-	}
 	if (service_registry) {
 		memdelete(service_registry);
 		service_registry = nullptr;
+	}
+	if (resource_manager) {
+		memdelete(resource_manager);
+		resource_manager = nullptr;
 	}
 }
 

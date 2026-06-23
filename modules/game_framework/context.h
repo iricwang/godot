@@ -3,10 +3,10 @@
 /**************************************************************************/
 #pragma once
 
-#include "core/object/ref_counted.h"
+#include "context_base.h"
+
 #include "scene/main/node.h"
 
-class Application;
 class Activity;
 class Dialog;
 class ResourceHandle;
@@ -18,12 +18,19 @@ class Intent;
 class Toast;
 
 // Android-style Context. Provides a unified access point for application-wide services.
-// Application extends Context and owns all plugin instances; Activity / Dialog / Toast
-// hold a Context* to reach those services through a common API.
+// Application extends Context and owns all plugin instances; Activity / Dialog also implement
+// IContext (via ContextBase<Self>) so they accept the same call sites.
 //
-// Context extends Node so that Application (and any future Context subclass) can live
-// in the scene tree and receive engine notifications directly — no proxy needed.
-class Context : public Node {
+// Inheritance: Context inherits ContextBase<Context> to get the 12 generic delegates
+// (start_activity / show_toast / get_service / load_resource_async / ...) for free.
+// Context-specific methods (state queries, owner overloads, scene service, MVVM statics)
+// are still implemented here directly.
+//
+// Why GDCLASS still inherits Node (not IContext): Application needs to live in the SceneTree
+// so it can receive engine notifications. GDCLASS allows only single inheritance, so the
+// IContext side is non-GDCLASS — GDScript-level `is Context` checks rely on the Context
+// class chain, not IContext.
+class Context : public Node, public ContextBase<Context> {
 	GDCLASS(Context, Node);
 
 	Application *app = nullptr;
@@ -31,40 +38,29 @@ class Context : public Node {
 protected:
 	static void _bind_methods();
 
+	void try_launch();
+
 public:
+	// ---- IContext implementation ----
+	Application *get_application() const override { return app; }
+	Object *as_object() override { return this; }
+
 	// ---- Application linkage ----
 	void set_application(Application *p_app);
-	Application *get_application() const;
 
-	// ---- Service lookup ----
-	Object *get_service(const StringName &p_name) const;
-	bool has_service(const StringName &p_name) const;
-
-	// ---- Resource loading ----
-	Ref<ResourceHandle> get_resource_handle(const String &p_path);
-	Ref<Resource> load_resource_sync(const String &p_path);
-	void load_resource_async(const String &p_path, const Callable &p_callback = Callable(), int p_priority = 0);
-
-	// ---- Navigation ----
-	void start_activity(const Ref<Intent> &p_intent);
-	// Convenience: build an Intent and start it in one call.
-	void start_activity_with(const String &p_action, int p_flags = 0, const Dictionary &p_extras = Dictionary());
-	void finish_activity(Activity *p_activity);
-	void finish_top();
-	bool back();
+	// ---- State queries (Context-only — Activity/Dialog don't need these) ----
 	Activity *get_current_activity() const;
 	int get_stack_size() const;
 
-	// ---- Overlays ----
-	void show_dialog(const Ref<Intent> &p_intent);
+	// ---- Owner / explicit-target overloads (Application-level operations) ----
+	void finish_activity(Activity *p_activity);
 	void show_dialog_with_owner(const Ref<Intent> &p_intent, Object *p_owner);
 	void dismiss_dialog(Dialog *p_dialog);
-	void show_toast(const Ref<Toast> &p_toast);
-	void show_toast_with_owner(const Ref<Toast> &p_toast, Object *p_owner);
+	void show_toast_with_owner(Toast *p_toast, Object *p_owner);
 	void clear_all_toasts();
 	void clear_toasts_by_owner(Object *p_owner);
 
-	// ---- Activity registration (delegates to ActivityManager) ----
+	// ---- Activity registration (Application configuration) ----
 	void register_activity(const String &p_action, const String &p_scene_path);
 
 	// ---- Scene switching (delegates to SceneService) ----
@@ -78,5 +74,5 @@ public:
 	static void bind_command(Object *p_source, const StringName &p_signal, ViewModel *p_vm, const StringName &p_method);
 
 	// ---- Toast factory (static) ----
-	static Ref<Toast> make_toast(const String &p_text, double p_duration = 2.0);
+	static Toast *make_toast(const String &p_text, double p_duration = 2.0);
 };

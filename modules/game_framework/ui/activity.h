@@ -3,8 +3,11 @@
 /**************************************************************************/
 #pragma once
 
+#include "../context_base.h"
+
 #include "scene/gui/control.h"
 
+#include "activity_launcher.h"
 #include "intent.h"
 #include "toast.h"
 #include "transition.h"
@@ -13,24 +16,37 @@
 
 class Context;
 class Resource;
+class Application;
 
 // A full-screen UI screen with an Android-style lifecycle. GDScript subclasses override the _on_* virtual methods.
 // Lifecycle is driven by ActivityManager (it calls the dispatch_* methods, which forward to the script virtuals).
 //
-// Activity holds a Context* reference (set by ActivityManager during creation) that gives it access to
-// Application-wide services (navigation, resource loading, service lookup, etc.). The most-used Context
-// methods are re-exported directly on Activity for an "Activity IS-A Context" GDScript experience.
-class Activity : public Control {
+// Activity is a C++ "is-a IContext" via ContextBase<Activity> — it carries an Application* and exposes the
+// full Context-style API (start_activity / show_toast / get_service / load_resource_* ...) directly. The
+// GDScript binding names are 100% backward compatible with the previous "Activity holds Context*" model.
+//
+// ---- Run-As-Standalone (Strategy) ----
+// Activity carries one `launcher: Ref<ActivityLauncher>` (default = StandaloneActivityLauncher). On
+// NOTIFICATION_READY the Activity calls `launcher->try_launch(this)` exactly once and forgets about it.
+// The launcher decides whether the Activity should self-host (and how). Swap launchers to support
+// editor preview / nested activity / multi-window / replay without touching Activity.
+//
+// To disable any self-bootstrap on a particular Activity, clear its launcher
+// (`activity.set_launcher(null)`) or set a no-op launcher.
+class Activity : public Control, public ContextBase<Activity> {
 	GDCLASS(Activity, Control);
 
+private:
 	Ref<Intent> intent;
 	Ref<Transition> transition_in;
 	Ref<Transition> transition_out;
-	Context *context = nullptr;
+	Ref<ActivityLauncher> launcher;
+	Application *_app = nullptr;
 	bool no_history = false;
 
 protected:
 	static void _bind_methods();
+	void _notification(int p_what);
 
 	GDVIRTUAL1(_on_create, Dictionary)
 	GDVIRTUAL0(_on_start)
@@ -40,6 +56,7 @@ protected:
 	GDVIRTUAL0(_on_destroy)
 	GDVIRTUAL1(_on_new_intent, Ref<Intent>)
 	GDVIRTUAL0R(bool, _on_back_pressed)
+	GDVIRTUAL1(_on_setup_standalone, Application *)
 
 public:
 	void set_intent(const Ref<Intent> &p_intent);
@@ -49,7 +66,7 @@ public:
 	void set_transition_out(const Ref<Transition> &p_transition);
 	Ref<Transition> get_transition_out() const;
 
-	// Lifecycle dispatch (called by ActivityManager). Each forwards to the GDScript virtual if overridden.
+	// Lifecycle dispatch (called by ActivityManager).
 	void dispatch_create(const Dictionary &p_saved_state);
 	void dispatch_start();
 	void dispatch_resume();
@@ -59,26 +76,36 @@ public:
 	void dispatch_new_intent(const Ref<Intent> &p_intent);
 	bool dispatch_back_pressed();
 
+	// Internal trampoline used by run_standalone_bootstrap via call_deferred.
+	void _dispatch_standalone_lifecycle(bool p_play_transitions);
+
 	void finish();
 
 	// ---- No-history mode ----
 	void set_no_history(bool p_no_history);
 	bool get_no_history() const;
 
-	// ---- Context access ----
-	void set_context(Context *p_context);
-	Context *get_context() const;
+	// ---- Application linkage / Context access ----
+	void set_application(Application *p_app);
+	void set_context(Context *p_context); // backward-compat alias
+	Context *get_context() const; // returns _app (Application IS-A Context)
 
-	// ---- Convenience methods (delegate to context) ----
-	void start_activity(const Ref<Intent> &p_intent);
-	void start_activity_with(const String &p_action, int p_flags = 0, const Dictionary &p_extras = Dictionary());
-	void finish_top();
-	bool back();
-	void show_dialog(const Ref<Intent> &p_intent);
-	void show_toast(const Ref<Toast> &p_toast);
-	Object *get_service(const StringName &p_name) const;
-	bool has_service(const StringName &p_name) const;
-	Ref<ResourceHandle> get_resource_handle(const String &p_path);
-	Ref<Resource> load_resource_sync(const String &p_path);
-	void load_resource_async(const String &p_path, const Callable &p_callback = Callable(), int p_priority = 0);
+	// ---- IContext implementation ----
+	Application *get_application() const override { return _app; }
+	Object *as_object() override { return this; }
+
+	// ---- Launcher ----
+	void set_launcher(const Ref<ActivityLauncher> &p_launcher);
+	Ref<ActivityLauncher> get_launcher() const;
+
+	// True when hosted by a StandaloneApplication (self-hosted preview), false
+	// when driven by a normal ActivityManager. Derived from the bound Application.
+	bool is_standalone() const;
+
+	// Public bootstrap entry — called by StandaloneActivityLauncher via call_deferred.
+	// Builds Application + StandaloneRoot, reparents, adopts into stack, dispatches lifecycle.
+	// Safe to call from GDScript for custom launchers / tests.
+	void run_standalone_bootstrap(bool p_play_transitions = false);
+
+	Activity();
 };

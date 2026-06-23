@@ -3,8 +3,10 @@
 /**************************************************************************/
 
 #include "context.h"
+#include "context_base.inl"
 
 #include "application.h"
+#include "core/config/engine.h"
 #include "mvvm/binding_engine.h"
 #include "mvvm/value_converter.h"
 #include "mvvm/view_model.h"
@@ -13,76 +15,26 @@
 #include "service/service_registry.h"
 #include "ui/activity.h"
 #include "ui/activity_manager.h"
-#include "ui/scene_service.h"
 #include "ui/dialog.h"
 #include "ui/intent.h"
+#include "ui/scene_service.h"
 #include "ui/toast.h"
 
 #include "core/object/class_db.h"
 #include "scene/main/node.h"
+#include "scene/main/scene_tree.h"
 
 void Context::set_application(Application *p_app) {
 	app = p_app;
 }
 
-Application *Context::get_application() const {
-	return app;
-}
+// ---- Note ----
+// The generic delegates (get_service / has_service / start_activity / show_dialog /
+// show_toast / get_resource_handle / load_resource_* / start_activity_with /
+// finish_top / back) are inherited from ContextBase<Context>. The implementations
+// below are Context-only methods that ContextBase does not cover.
 
-// ---- Service lookup ----
-
-Object *Context::get_service(const StringName &p_name) const {
-	ERR_FAIL_NULL_V(app, nullptr);
-	return app->get_service_registry()->get_service(p_name);
-}
-
-bool Context::has_service(const StringName &p_name) const {
-	ERR_FAIL_NULL_V(app, false);
-	return app->get_service_registry()->has_service(p_name);
-}
-
-// ---- Resource loading ----
-
-Ref<ResourceHandle> Context::get_resource_handle(const String &p_path) {
-	ERR_FAIL_NULL_V(app, Ref<ResourceHandle>());
-	return app->get_resource_manager()->get_handle(p_path);
-}
-
-Ref<Resource> Context::load_resource_sync(const String &p_path) {
-	ERR_FAIL_NULL_V(app, Ref<Resource>());
-	return app->get_resource_manager()->load_sync(p_path);
-}
-
-void Context::load_resource_async(const String &p_path, const Callable &p_callback, int p_priority) {
-	ERR_FAIL_NULL(app);
-	app->get_resource_manager()->load_async(p_path, p_callback, p_priority);
-}
-
-// ---- Navigation ----
-
-void Context::start_activity(const Ref<Intent> &p_intent) {
-	ERR_FAIL_NULL(app);
-	app->get_activity_manager()->start_activity(p_intent);
-}
-
-void Context::start_activity_with(const String &p_action, int p_flags, const Dictionary &p_extras) {
-	start_activity(Intent::create(p_action, p_flags, p_extras));
-}
-
-void Context::finish_activity(Activity *p_activity) {
-	ERR_FAIL_NULL(app);
-	app->get_activity_manager()->finish_activity(p_activity);
-}
-
-void Context::finish_top() {
-	ERR_FAIL_NULL(app);
-	app->get_activity_manager()->finish_top();
-}
-
-bool Context::back() {
-	ERR_FAIL_NULL_V(app, false);
-	return app->get_activity_manager()->back();
-}
+// ---- State queries ----
 
 Activity *Context::get_current_activity() const {
 	ERR_FAIL_NULL_V(app, nullptr);
@@ -94,11 +46,11 @@ int Context::get_stack_size() const {
 	return app->get_activity_manager()->get_stack_size();
 }
 
-// ---- Overlays ----
+// ---- Owner / explicit overloads ----
 
-void Context::show_dialog(const Ref<Intent> &p_intent) {
+void Context::finish_activity(Activity *p_activity) {
 	ERR_FAIL_NULL(app);
-	app->get_activity_manager()->show_dialog(p_intent);
+	app->get_activity_manager()->finish_activity(p_activity);
 }
 
 void Context::show_dialog_with_owner(const Ref<Intent> &p_intent, Object *p_owner) {
@@ -111,12 +63,7 @@ void Context::dismiss_dialog(Dialog *p_dialog) {
 	app->get_activity_manager()->dismiss_dialog(p_dialog);
 }
 
-void Context::show_toast(const Ref<Toast> &p_toast) {
-	ERR_FAIL_NULL(app);
-	app->get_activity_manager()->show_toast(p_toast);
-}
-
-void Context::show_toast_with_owner(const Ref<Toast> &p_toast, Object *p_owner) {
+void Context::show_toast_with_owner(Toast *p_toast, Object *p_owner) {
 	ERR_FAIL_NULL(app);
 	app->get_activity_manager()->show_toast_with_owner(p_toast, p_owner);
 }
@@ -171,7 +118,7 @@ void Context::bind_command(Object *p_source, const StringName &p_signal, ViewMod
 
 // ---- Toast factory ----
 
-Ref<Toast> Context::make_toast(const String &p_text, double p_duration) {
+Toast *Context::make_toast(const String &p_text, double p_duration) {
 	return Toast::make_text(p_text, p_duration);
 }
 
@@ -179,28 +126,62 @@ void Context::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_application", "application"), &Context::set_application);
 	ClassDB::bind_method(D_METHOD("get_application"), &Context::get_application);
 
-	ClassDB::bind_method(D_METHOD("get_service", "name"), &Context::get_service);
-	ClassDB::bind_method(D_METHOD("has_service", "name"), &Context::has_service);
+	// ---- Generic delegates (inherited from ContextBase<Context>) ----
+	// Use PMF static_cast so the compiler picks up the overload defined in the CRTP base.
+	using GetServiceT = Object *(Context::*)(const StringName &) const;
+	GetServiceT get_service_pmf = static_cast<GetServiceT>(&Context::get_service);
+	ClassDB::bind_method(D_METHOD("get_service", "name"), get_service_pmf);
 
-	ClassDB::bind_method(D_METHOD("get_resource_handle", "path"), &Context::get_resource_handle);
-	ClassDB::bind_method(D_METHOD("load_resource_sync", "path"), &Context::load_resource_sync);
-	ClassDB::bind_method(D_METHOD("load_resource_async", "path", "callback", "priority"), &Context::load_resource_async, DEFVAL(Callable()), DEFVAL(0));
+	using HasServiceT = bool (Context::*)(const StringName &) const;
+	HasServiceT has_service_pmf = static_cast<HasServiceT>(&Context::has_service);
+	ClassDB::bind_method(D_METHOD("has_service", "name"), has_service_pmf);
 
-	ClassDB::bind_method(D_METHOD("start_activity", "intent"), &Context::start_activity);
-	ClassDB::bind_method(D_METHOD("start_activity_with", "action", "flags", "extras"), &Context::start_activity_with, DEFVAL(0), DEFVAL(Dictionary()));
+	using GetHandleT = Ref<ResourceHandle> (Context::*)(const String &);
+	GetHandleT get_handle_pmf = static_cast<GetHandleT>(&Context::get_resource_handle);
+	ClassDB::bind_method(D_METHOD("get_resource_handle", "path"), get_handle_pmf);
+
+	using LoadSyncT = Ref<Resource> (Context::*)(const String &);
+	LoadSyncT load_sync_pmf = static_cast<LoadSyncT>(&Context::load_resource_sync);
+	ClassDB::bind_method(D_METHOD("load_resource_sync", "path"), load_sync_pmf);
+
+	using LoadAsyncT = void (Context::*)(const String &, const Callable &, int);
+	LoadAsyncT load_async_pmf = static_cast<LoadAsyncT>(&Context::load_resource_async);
+	ClassDB::bind_method(D_METHOD("load_resource_async", "path", "callback", "priority"), load_async_pmf, DEFVAL(Callable()), DEFVAL(0));
+
+	using StartActT = void (Context::*)(const Ref<Intent> &);
+	StartActT start_act_pmf = static_cast<StartActT>(&Context::start_activity);
+	ClassDB::bind_method(D_METHOD("start_activity", "intent"), start_act_pmf);
+
+	using StartActWithT = void (Context::*)(const String &, int, const Dictionary &);
+	StartActWithT start_act_with_pmf = static_cast<StartActWithT>(&Context::start_activity_with);
+	ClassDB::bind_method(D_METHOD("start_activity_with", "action", "flags", "extras"), start_act_with_pmf, DEFVAL(0), DEFVAL(Dictionary()));
+
+	using FinishTopT = void (Context::*)();
+	FinishTopT finish_top_pmf = static_cast<FinishTopT>(&Context::finish_top);
+	ClassDB::bind_method(D_METHOD("finish_top"), finish_top_pmf);
+
+	using BackT = bool (Context::*)();
+	BackT back_pmf = static_cast<BackT>(&Context::back);
+	ClassDB::bind_method(D_METHOD("back"), back_pmf);
+
+	using ShowDlgT = void (Context::*)(const Ref<Intent> &);
+	ShowDlgT show_dlg_pmf = static_cast<ShowDlgT>(&Context::show_dialog);
+	ClassDB::bind_method(D_METHOD("show_dialog", "intent"), show_dlg_pmf);
+
+	using ShowToastT = void (Context::*)(Toast *);
+	ShowToastT show_toast_pmf = static_cast<ShowToastT>(&Context::show_toast);
+	ClassDB::bind_method(D_METHOD("show_toast", "toast"), show_toast_pmf);
+
+	// ---- Context-only methods ----
 	ClassDB::bind_method(D_METHOD("finish_activity", "activity"), &Context::finish_activity);
-	ClassDB::bind_method(D_METHOD("finish_top"), &Context::finish_top);
-	ClassDB::bind_method(D_METHOD("back"), &Context::back);
 	ClassDB::bind_method(D_METHOD("get_current_activity"), &Context::get_current_activity);
 	ClassDB::bind_method(D_METHOD("get_stack_size"), &Context::get_stack_size);
 
-	ClassDB::bind_method(D_METHOD("show_dialog", "intent"), &Context::show_dialog);
 	ClassDB::bind_method(D_METHOD("show_dialog_with_owner", "intent", "owner"), &Context::show_dialog_with_owner);
 	ClassDB::bind_method(D_METHOD("dismiss_dialog", "dialog"), &Context::dismiss_dialog);
-	ClassDB::bind_method(D_METHOD("show_toast", "toast"), &Context::show_toast);
 	ClassDB::bind_method(D_METHOD("show_toast_with_owner", "toast", "owner"), &Context::show_toast_with_owner);
-		ClassDB::bind_method(D_METHOD("clear_all_toasts"), &Context::clear_all_toasts);
-		ClassDB::bind_method(D_METHOD("clear_toasts_by_owner", "owner"), &Context::clear_toasts_by_owner);
+	ClassDB::bind_method(D_METHOD("clear_all_toasts"), &Context::clear_all_toasts);
+	ClassDB::bind_method(D_METHOD("clear_toasts_by_owner", "owner"), &Context::clear_toasts_by_owner);
 
 	ClassDB::bind_method(D_METHOD("register_activity", "action", "scene_path"), &Context::register_activity);
 
@@ -208,9 +189,31 @@ void Context::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("change_scene_sync", "path"), &Context::change_scene_sync);
 	ClassDB::bind_method(D_METHOD("get_current_scene"), &Context::get_current_scene);
 
+	// ---- Static MVVM / Toast helpers ----
 	ClassDB::bind_static_method("Context", D_METHOD("bind", "view", "vm"), &Context::bind);
-	// converter: Variant default (nil-Ref) to keep GDScript binding compatible.
 	ClassDB::bind_static_method("Context", D_METHOD("bind_property", "target", "target_property", "vm", "source_property", "mode", "converter"), &Context::bind_property, DEFVAL(0), DEFVAL(Variant()));
 	ClassDB::bind_static_method("Context", D_METHOD("bind_command", "source", "signal", "vm", "method"), &Context::bind_command);
 	ClassDB::bind_static_method("Context", D_METHOD("make_toast", "text", "duration"), &Context::make_toast, DEFVAL(2.0));
+}
+
+void Context::try_launch() {
+	if (get_application() != nullptr) {
+		return;
+	}
+	if (Engine::get_singleton()->is_editor_hint()) {
+		return;
+	}
+	// The node must be in a SceneTree to host anything.
+	Node *node = Object::cast_to<Node>(as_object());
+	if (node == nullptr) {
+		return;
+	}
+	SceneTree *st = node->get_tree();
+	if (st == nullptr) {
+		return;
+	}
+	if (st->get_current_scene() != node) {
+		return;
+	}
+
 }

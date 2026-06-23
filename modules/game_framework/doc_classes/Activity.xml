@@ -14,6 +14,18 @@
 		- On finish: [method _on_pause] → [method _on_stop] → [method _on_destroy]
 
 		Activity holds a [Context] reference and re-exports the most common Context methods directly, so you can write [code]start_activity(it)[/code] instead of [code]get_context().start_activity(it)[/code].
+
+		[b]Implementation note.[/b] Activity is a C++ [code]IContext[/code] via the [code]ContextBase<Activity>[/code] CRTP mixin — at the C++ level, it [i]is[/i] a Context. The convenience methods (start_activity / show_toast / get_service / load_resource_*) are inherited, not duplicated. GDScript binding names are 100% backward compatible. Internally Activity holds an [code]Application *[/code] rather than the abstract [code]Context *[/code]: [method get_context] returns this Application (upcast to Context, since Application IS-A Context), and the legacy [method set_context] is preserved as an alias that down-casts to Application.
+
+		[b]Run-As-Standalone (Strategy).[/b] When an Activity scene is opened directly in the editor (F6 / "Play Scene") without an [ActivityManager] hosting it, the Activity's [member launcher] decides whether to self-host. The default launcher is [StandaloneActivityLauncher], which spawns a minimal [Application] + [code]StandaloneRoot[/code] under [SceneTree.root], reparents the Activity, and drives the GDScript lifecycle. To disable the bootstrap, set [code]launcher = null[/code] or assign a custom launcher. Override [method _on_setup_standalone] to register mock services before [method _on_create] fires.
+
+		[b]Run-As-Standalone[/b]
+		When an Activity scene is opened directly (e.g. F6 / "Play Scene" in the editor, or [code]godot --path . &lt;activity&gt;.tscn[/code] on the command line) without an [ActivityManager] hosting it, the Activity bootstraps a minimal [Application] automatically:
+		- A new [Application] node and a [code]StandaloneRoot[/code] full-screen Control are spawned under the scene tree root.
+		- The Activity is reparented under [code]StandaloneRoot[/code] so [Dialog] / [Toast] layering matches the managed path.
+		- It is added to the Activity stack (so [method back] / [method finish] work normally) and [code]finish()[/code] on the last standalone Activity calls [SceneTree.quit].
+		- [b]No[/b] services are pre-registered. Override [method _on_setup_standalone] to register mock services or pre-load data.
+		- To suppress the bootstrap, set [member launcher] to [code]null[/code], or swap to a custom [ActivityLauncher] subclass.
 	</description>
 	<tutorials>
 	</tutorials>
@@ -58,6 +70,13 @@
 				Called when the Activity becomes the active (focused) screen. Either the initial launch after [method _on_start], or returning from a covered state.
 			</description>
 		</method>
+		<method name="_on_setup_standalone" qualifiers="virtual">
+			<return type="void" />
+			<param index="0" name="app" type="Application" />
+			<description>
+				Called only on the Run-As-Standalone bootstrap path, right after the host [Application] is built but before [method _on_create]. Override this to register mock services, preset Intent extras, or seed any resource the Activity expects when ActivityManager would normally have wired them up. Not called when the Activity is opened via [method Context.start_activity].
+			</description>
+		</method>
 		<method name="_on_start" qualifiers="virtual">
 			<return type="void" />
 			<description>
@@ -88,6 +107,12 @@
 				Convenience for [method Context.finish_top]. Finishes the current top Activity.
 			</description>
 		</method>
+		<method name="get_application" qualifiers="const">
+			<return type="Application" />
+			<description>
+				Returns the [Application] hosting this Activity. Equivalent to [code]get_context()[/code] but typed as [Application] for convenience. Returns [code]null[/code] before the Activity has been wired up (e.g. during [code]_init[/code]).
+			</description>
+		</method>
 		<method name="get_context" qualifiers="const">
 			<return type="Context" />
 			<description>
@@ -104,6 +129,12 @@
 			<return type="bool" />
 			<description>
 				Returns whether this Activity was launched with [code]FLAG_NO_HISTORY[/code]. When [code]true[/code], the Activity is automatically destroyed when navigating away from it, instead of being kept in the back stack.
+			</description>
+		</method>
+		<method name="is_standalone" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] if this Activity was promoted by the Run-As-Standalone bootstrap (i.e. it is the entry scene and built its own [Application]). Returns [code]false[/code] when it was driven by an existing [ActivityManager].
 			</description>
 		</method>
 		<method name="get_resource_handle" qualifiers="const">
@@ -143,6 +174,13 @@
 				Convenience for [method Context.load_resource_sync].
 			</description>
 		</method>
+		<method name="set_application">
+			<return type="void" />
+			<param index="0" name="application" type="Application" />
+			<description>
+				Sets the [Application] hosting this Activity. Called automatically by [ActivityManager] during activity creation, or by the Run-As-Standalone bootstrap. Most users do not need to call this directly. Calling [method set_context] with an Application also works (it is a backward-compat alias).
+			</description>
+		</method>
 		<method name="set_no_history">
 			<return type="void" />
 			<param index="0" name="no_history" type="bool" />
@@ -173,6 +211,9 @@
 		</method>
 	</methods>
 	<members>
+		<member name="launcher" type="ActivityLauncher" setter="set_launcher" getter="get_launcher">
+			The startup strategy invoked on [code]NOTIFICATION_READY[/code]. Default = [StandaloneActivityLauncher] (enables the F6 single-Activity debug workflow). Set to [code]null[/code] to disable any auto-launch, or assign a custom subclass for editor-preview / nested-activity / multi-window setups.
+		</member>
 		<member name="no_history" type="bool" setter="set_no_history" getter="get_no_history" default="false">
 			If [code]true[/code], this Activity will be destroyed when a new Activity is started on top of it, instead of being paused and kept in the back stack.
 		</member>

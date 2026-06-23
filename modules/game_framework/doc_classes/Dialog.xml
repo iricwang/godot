@@ -9,6 +9,10 @@
 		The dialog scene typically draws its own semi-transparent backdrop and a centered panel. Lifecycle: [method _on_create] (once) → visible → [method _on_dismiss] (when dismissed).
 
 		Each Dialog has an optional [code]lifecycle_owner[/code] — when the owning [Activity] is destroyed, its dialogs are auto-dismissed by [ActivityManager].
+
+		[b]Implementation note.[/b] Dialog is a C++ [code]IContext[/code] via the [code]ContextBase<Dialog>[/code] CRTP mixin — at the C++ level, it [i]is[/i] a Context. The convenience methods (show_toast / get_service / load_resource_*) are inherited, not duplicated. GDScript binding names are 100% backward compatible. See [Context] for the rationale and limitations on GDScript-level type checks.
+
+		[b]Run-As-Standalone (Strategy).[/b] Like [Activity], a Dialog scene opened directly in the editor (F6 / "Play Scene") without an [ActivityManager] hosting it is self-hosted by its [member launcher]. The default [StandaloneActivityLauncher] checks whether an [Application] is already bound: if it is, the Dialog was opened the normal way (via [method Context.show_dialog]) and the launcher does nothing; if it is [b]not[/b], the Dialog is a standalone preview context, so the launcher spawns a minimal [Application] + [code]StandaloneRoot[/code] under [SceneTree.root], reparents the Dialog, and dispatches [method _on_create] — letting a [code]*_dialog.tscn[/code] be previewed in isolation. Override [method _on_setup_standalone] to register mock services first. To disable, set [code]launcher = null[/code]. Closing a standalone-root Dialog ([method dismiss]) quits the SceneTree.
 	</description>
 	<tutorials>
 	</tutorials>
@@ -26,10 +30,23 @@
 				Called when the Dialog is being dismissed. Clean up resources, dispose the [ViewModel], etc. You do [b]not[/b] need to call [method dismiss] inside this callback.
 			</description>
 		</method>
+		<method name="_on_setup_standalone" qualifiers="virtual">
+			<return type="void" />
+			<param index="0" name="app" type="Application" />
+			<description>
+				Called only on the Run-As-Standalone preview path, right after the host [Application] is built but before [method _on_create]. Override this to register mock services, preset Intent extras, or seed resources the Dialog expects when [ActivityManager] would normally have wired them up. Not called when the Dialog is opened via [method Context.show_dialog].
+			</description>
+		</method>
 		<method name="dismiss">
 			<return type="void" />
 			<description>
 				Requests the ActivityManager to dismiss this Dialog. Triggers [method _on_dismiss], plays the exit transition, then removes the node.
+			</description>
+		</method>
+		<method name="get_application" qualifiers="const">
+			<return type="Application" />
+			<description>
+				Returns the [Application] hosting this Dialog. Equivalent to [code]get_context()[/code] but typed as [Application]. Returns [code]null[/code] before the Dialog has been wired up.
 			</description>
 		</method>
 		<method name="get_context" qualifiers="const">
@@ -71,6 +88,12 @@
 				Convenience for [method Context.has_service].
 			</description>
 		</method>
+		<method name="is_standalone" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] if this Dialog was promoted by the Run-As-Standalone preview bootstrap (it was the entry scene and built its own [Application]). Returns [code]false[/code] when it was shown by an existing [ActivityManager] via [method Context.show_dialog].
+			</description>
+		</method>
 		<method name="load_resource_async">
 			<return type="void" />
 			<param index="0" name="path" type="String" />
@@ -87,6 +110,13 @@
 				Convenience for [method Context.load_resource_sync].
 			</description>
 		</method>
+		<method name="run_standalone_bootstrap">
+			<return type="void" />
+			<param index="0" name="play_transitions" type="bool" default="false" />
+			<description>
+				Builds the standalone host ([Application] + [code]StandaloneRoot[/code]), reparents this Dialog under it, registers it as a running dialog, and dispatches [method _on_create]. Normally invoked by [member launcher] via [code]call_deferred[/code]; exposed publicly so custom launchers or tests can drive the preview directly. Assumes no [Application] is bound yet. When [param play_transitions] is [code]true[/code], [member transition_in] plays on entry.
+			</description>
+		</method>
 		<method name="show_toast">
 			<return type="void" />
 			<param index="0" name="toast" type="Toast" />
@@ -96,6 +126,9 @@
 		</method>
 	</methods>
 	<members>
+		<member name="launcher" type="ActivityLauncher" setter="set_launcher" getter="get_launcher">
+			The startup strategy invoked on [code]NOTIFICATION_READY[/code]. Default = [StandaloneActivityLauncher] (enables the F6 single-Dialog preview workflow). Set to [code]null[/code] to disable any auto-launch, or assign a custom subclass.
+		</member>
 		<member name="transition_in" type="Transition" setter="set_transition_in" getter="get_transition_in">
 			The [Transition] resource for entering the screen.
 		</member>

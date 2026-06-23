@@ -11,6 +11,30 @@
 	<tutorials>
 	</tutorials>
 	<methods>
+		<method name="adopt_running_activity">
+			<return type="void" />
+			<param index="0" name="activity" type="Activity" />
+			<param index="1" name="intent" type="Intent" />
+			<description>
+				Registers an already-instantiated, already-parented [Activity] (e.g. a Run-As-Standalone entry scene) into the back stack as the bottom entry. Bookkeeping only — does not add_child or dispatch lifecycle.
+			</description>
+		</method>
+		<method name="adopt_running_dialog">
+			<return type="void" />
+			<param index="0" name="dialog" type="Dialog" />
+			<param index="1" name="intent" type="Intent" />
+			<description>
+				Registers an already-instantiated, already-parented [Dialog] (Run-As-Standalone preview) into the overlay list. Bookkeeping only — sets intent/application/owner; does not add_child or dispatch lifecycle.
+			</description>
+		</method>
+		<method name="adopt_running_toast">
+			<return type="void" />
+			<param index="0" name="toast" type="Toast" />
+			<param index="1" name="intent" type="Intent" />
+			<description>
+				Registers an already-instantiated, already-parented [Toast] (Run-As-Standalone preview). Bookkeeping only — sets intent/application/owner; does not add_child, animate, or auto-dismiss.
+			</description>
+		</method>
 		<method name="back">
 			<return type="bool" />
 			<description>
@@ -28,6 +52,13 @@
 			<param index="0" name="dialog" type="Dialog" />
 			<description>
 				Dismisses a specific Dialog.
+			</description>
+		</method>
+		<method name="dismiss_toast">
+			<return type="void" />
+			<param index="0" name="toast" type="Toast" />
+			<description>
+				Dismisses a shown [Toast] (triggers its [code]_on_dismiss[/code] then frees it). When the Toast is a standalone-root preview, quits the SceneTree instead.
 			</description>
 		</method>
 		<method name="finish_activity">
@@ -97,7 +128,7 @@
 			<return type="Toast" />
 			<param index="0" name="idx" type="int" />
 			<description>
-				Returns the Toast at [param idx] in the pending queue. Debug inspection only.
+				Returns the [Toast] node at [param idx] in the pending queue. Debug inspection only.
 			</description>
 		</method>
 		<method name="is_toast_active" qualifiers="const">

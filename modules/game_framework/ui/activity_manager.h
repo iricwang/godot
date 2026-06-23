@@ -37,7 +37,7 @@ private:
 	Vector<Activity *> stack;
 	Vector<Dialog *> dialogs;
 
-	Vector<Ref<Toast>> toast_queue;
+	Vector<Toast *> toast_queue;
 	bool toast_active = false;
 	ToastDisplayMode toast_mode = SERIAL;
 	Vector<Node *> active_toast_panels; // parallel mode: active toast nodes
@@ -46,7 +46,7 @@ private:
 
 	void _begin_exit(Activity *p_act); // run exit transition then queue_free
 	void _show_next_toast();
-	void _spawn_toast_node(const Ref<Toast> &p_toast); // shared render helper (serial + parallel)
+	void _present_toast(Toast *p_toast); // add the Toast node to the tree, animate, schedule auto-dismiss
 	void _on_toast_finished(Object *p_panel);
 
 protected:
@@ -68,6 +68,13 @@ public:
 	Ref<ActivityLoader> get_loader() const;
 
 	void start_activity(const Ref<Intent> &p_intent);
+
+	// Insert an Activity that is already in the SceneTree (e.g. the entry
+	// scene that bootstrapped itself in Run-As-Standalone mode) into the
+	// stack as the bottom-most entry. The Activity must already have its
+	// context and intent set by the caller; no lifecycle is dispatched here.
+	void adopt_running_activity(Activity *p_activity, const Ref<Intent> &p_intent);
+
 	void finish_activity(Activity *p_activity);
 	void finish_top();
 	bool back();
@@ -75,10 +82,23 @@ public:
 	void show_dialog(const Ref<Intent> &p_intent);
 	void show_dialog_with_owner(const Ref<Intent> &p_intent, Object *p_owner);
 	void dismiss_dialog(Dialog *p_dialog);
-	void show_toast(const Ref<Toast> &p_toast);
-	void show_toast_with_owner(const Ref<Toast> &p_toast, Object *p_owner);
+
+	// Register an already-instantiated, already-parented Dialog as a running
+	// dialog (standalone preview path). Bookkeeping only: sets intent +
+	// application + owner and tracks it in `dialogs`; does NOT add_child or
+	// dispatch any lifecycle (the Dialog's own bootstrap does that).
+	void adopt_running_dialog(Dialog *p_dialog, const Ref<Intent> &p_intent);
+	void show_toast(Toast *p_toast);
+	void show_toast_with_owner(Toast *p_toast, Object *p_owner);
 	void clear_all_toasts();
 	void clear_toasts_by_owner(Object *p_owner);
+
+	// Register an already-instantiated, already-parented Toast as a running toast
+	// (standalone preview path). Bookkeeping only: sets intent + application +
+	// owner and tracks it; does NOT add_child, animate, or auto-dismiss.
+	void adopt_running_toast(Toast *p_toast, const Ref<Intent> &p_intent);
+	// Dismiss a shown Toast (standalone-root → quits the SceneTree, like Dialog).
+	void dismiss_toast(Toast *p_toast);
 
 	void set_toast_display_mode(ToastDisplayMode p_mode);
 	ToastDisplayMode get_toast_display_mode() const;
@@ -91,7 +111,7 @@ public:
 	int get_dialog_count() const;
 	Dialog *get_dialog(int p_idx) const;
 	int get_toast_queue_count() const;
-	Ref<Toast> get_toast_queue_item(int p_idx) const;
+	Toast *get_toast_queue_item(int p_idx) const;
 	bool is_toast_active() const;
 
 	// Drain all activities, dialogs, and toasts. Called by Application::shutdown().

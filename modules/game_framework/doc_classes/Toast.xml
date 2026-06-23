@@ -1,22 +1,56 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="Toast" inherits="RefCounted" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+<class name="Toast" inherits="Control" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
 	<brief_description>
-		A lightweight transient-message descriptor.
+		A transient message overlay, fading in near the bottom of the screen.
 	</brief_description>
 	<description>
-		Toast describes a short message that appears near the bottom of the screen and fades out automatically. Create one with [method make_text], optionally attach a custom scene via [member custom_scene], then display it with [method Context.show_toast] or [method Activity.show_toast].
+		Toast shows a short message that appears near the bottom of the screen and fades out automatically. Create a default text toast with [method make_text] (or [method Context.make_toast]) and display it with [method Context.show_toast] / [method Activity.show_toast]. [ActivityManager] queues toasts (FIFO by default), animates the fade-in/out, and frees the node when done.
 
-		If [member custom_scene] is set, [ActivityManager] instantiates that scene instead of the default panel+label. The custom scene root may implement [code]_on_start(toast: Toast)[/code] to receive the Toast data after [code]_ready()[/code].
+		A custom layout is authored as a scene whose root extends Toast and overrides [method _on_create] to build its UI — exactly like [Dialog]. The old [code]custom_scene[/code] indirection has been removed.
 
-		Each Toast has an optional [code]owner[/code] (set by ActivityManager). When the owner is destroyed, the Toast is removed from the pending queue.
+		Toast is a C++ "is-a IContext" via the [code]ContextBase&lt;Toast&gt;[/code] CRTP mixin — at the C++ level it [i]is[/i] a Context. Like [Activity] / [Dialog] it can self-host for preview (F6) through its [member launcher]: when no [Application] is bound (i.e. it is the entry scene, not shown via [method Context.show_toast]), it spawns a [StandaloneApplication] and dispatches [method _on_create]. Override [method _on_setup_standalone] to register mock services first.
+
+		Each Toast has an optional lifecycle owner (set by [ActivityManager]). When the owning [Activity] is destroyed, its pending toasts are cancelled.
 	</description>
 	<tutorials>
 	</tutorials>
 	<methods>
-		<method name="get_custom_scene" qualifiers="const">
-			<return type="String" />
+		<method name="_on_create" qualifiers="virtual">
+			<return type="void" />
+			<param index="0" name="saved_state" type="Dictionary" />
 			<description>
-				Returns the custom scene path ([code].tscn[/code]) used for rendering this Toast, or an empty string for the default look.
+				Called once when the Toast is shown. Override in a custom Toast scene to build the UI; if not overridden, a default panel+label using [member text] is built. [param saved_state] receives [member Intent.extras] when present.
+			</description>
+		</method>
+		<method name="_on_dismiss" qualifiers="virtual">
+			<return type="void" />
+			<description>
+				Called when the Toast is being dismissed (after its display duration, or via [method dismiss]). Clean up here.
+			</description>
+		</method>
+		<method name="_on_setup_standalone" qualifiers="virtual">
+			<return type="void" />
+			<param index="0" name="app" type="Application" />
+			<description>
+				Called only on the Run-As-Standalone preview path, right after the host [Application] is built but before [method _on_create]. Override to register mock services / preset Intent extras. Not called when shown via [method Context.show_toast].
+			</description>
+		</method>
+		<method name="dismiss">
+			<return type="void" />
+			<description>
+				Dismisses this Toast (triggers [method _on_dismiss] then frees it). When previewing standalone, dismissing the root Toast quits the SceneTree.
+			</description>
+		</method>
+		<method name="get_application" qualifiers="const">
+			<return type="Application" />
+			<description>
+				Returns the [Application] hosting this Toast, or [code]null[/code] before it has been shown.
+			</description>
+		</method>
+		<method name="get_context" qualifiers="const">
+			<return type="Context" />
+			<description>
+				Returns the [Context] (the hosting [Application]) for this Toast.
 			</description>
 		</method>
 		<method name="get_duration" qualifiers="const">
@@ -25,10 +59,10 @@
 				Returns how long the Toast stays on screen (in seconds), excluding fade-in and fade-out.
 			</description>
 		</method>
-		<method name="get_owner" qualifiers="const">
+		<method name="get_lifecycle_owner" qualifiers="const">
 			<return type="Object" />
 			<description>
-				Returns the lifecycle owner of this Toast, or [code]null[/code] if unassigned or the owner has been destroyed.
+				Returns the lifecycle owner, or [code]null[/code] if unassigned or already destroyed.
 			</description>
 		</method>
 		<method name="get_text" qualifiers="const">
@@ -37,28 +71,35 @@
 				Returns the message text of this Toast.
 			</description>
 		</method>
+		<method name="is_owned_by" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="id" type="int" />
+			<description>
+				Returns [code]true[/code] if this Toast's lifecycle owner has the given object id (used by [ActivityManager] to cancel an owner's pending toasts).
+			</description>
+		</method>
+		<method name="is_standalone" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] if hosted by a [StandaloneApplication] (self-hosted preview), [code]false[/code] when shown by a normal [ActivityManager].
+			</description>
+		</method>
 		<method name="make_text" qualifiers="static">
 			<return type="Toast" />
 			<param index="0" name="text" type="String" />
 			<param index="1" name="duration" type="float" default="2.0" />
 			<description>
-				Creates a new Toast with plain text. Equivalent to [code]Context.make_toast(text, duration)[/code].
+				Creates a new default text Toast node (not yet in any tree). Equivalent to [code]Context.make_toast(text, duration)[/code]. Pass it to [method Context.show_toast].
 				[codeblock]
-				var t = Toast.make_text("Hello World", 3.0)
-				show_toast(t)
+				show_toast(Toast.make_text("Hello World", 3.0))
 				[/codeblock]
 			</description>
 		</method>
-		<method name="set_custom_scene">
+		<method name="run_standalone_bootstrap">
 			<return type="void" />
-			<param index="0" name="path" type="String" />
+			<param index="0" name="play_transitions" type="bool" default="false" />
 			<description>
-				Sets a custom [code].tscn[/code] path for rendering this Toast. If empty, the default panel+label is used.
-				[codeblock]
-				var t = Toast.make_text("Custom look", 3.0)
-				t.set_custom_scene("res://scenes/toast_custom.tscn")
-				show_toast(t)
-				[/codeblock]
+				Builds the standalone host ([StandaloneApplication] + StandaloneRoot), reparents this Toast under it, and dispatches [method _on_create]. Normally driven by [member launcher]; exposed for custom launchers / tests. Self-guards: no-op if an [Application] is already bound or running in the editor.
 			</description>
 		</method>
 		<method name="set_duration">
@@ -68,7 +109,7 @@
 				Sets how long the Toast stays on screen (in seconds).
 			</description>
 		</method>
-		<method name="set_owner">
+		<method name="set_lifecycle_owner">
 			<return type="void" />
 			<param index="0" name="owner" type="Object" />
 			<description>
@@ -84,14 +125,20 @@
 		</method>
 	</methods>
 	<members>
-		<member name="custom_scene" type="String" setter="set_custom_scene" getter="get_custom_scene" default="&quot;&quot;">
-			Optional [code].tscn[/code] path for a custom Toast layout. When non-empty, [ActivityManager] instantiates this scene instead of the default panel+label.
-		</member>
 		<member name="duration" type="float" setter="set_duration" getter="get_duration" default="2.0">
 			Display duration in seconds (excluding fade-in/out).
 		</member>
+		<member name="launcher" type="ActivityLauncher" setter="set_launcher" getter="get_launcher">
+			The startup strategy invoked on [code]NOTIFICATION_READY[/code]. Default = [StandaloneActivityLauncher] (enables F6 single-Toast preview). Set to [code]null[/code] to disable.
+		</member>
 		<member name="text" type="String" setter="set_text" getter="get_text" default="&quot;&quot;">
-			The message text to display.
+			The message text to display (used by the default visual).
+		</member>
+		<member name="transition_in" type="Transition" setter="set_transition_in" getter="get_transition_in">
+			Optional enter [Transition] played in standalone preview.
+		</member>
+		<member name="transition_out" type="Transition" setter="set_transition_out" getter="get_transition_out">
+			Optional exit [Transition].
 		</member>
 	</members>
 </class>

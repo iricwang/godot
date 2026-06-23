@@ -15,13 +15,16 @@
 #include "resource/resource_handle.h"
 #include "resource/resource_manager.h"
 #include "service/service_registry.h"
+#include "standalone_application.h"
 #include "ui/activity.h"
+#include "ui/activity_launcher.h"
 #include "ui/activity_loader.h"
 #include "ui/activity_manager.h"
 #include "ui/auto_activity_loader.h"
 #include "ui/dialog.h"
 #include "ui/intent.h"
 #include "ui/scene_service.h"
+#include "ui/standalone_activity_launcher.h"
 #include "ui/toast.h"
 #include "ui/transition.h"
 
@@ -44,6 +47,8 @@ void initialize_game_framework_module(ModuleInitializationLevel p_level) {
 	GDREGISTER_CLASS(Transition);
 	GDREGISTER_CLASS(ActivityLoader);
 	GDREGISTER_CLASS(AutoActivityLoader);
+	GDREGISTER_CLASS(ActivityLauncher);
+	GDREGISTER_CLASS(StandaloneActivityLauncher);
 	GDREGISTER_CLASS(Activity);
 	GDREGISTER_CLASS(Dialog);
 	GDREGISTER_CLASS(Toast);
@@ -60,6 +65,7 @@ void initialize_game_framework_module(ModuleInitializationLevel p_level) {
 
 	GDREGISTER_CLASS(Context);
 	GDREGISTER_CLASS(Application);
+	GDREGISTER_CLASS(StandaloneApplication);
 
 #ifdef TOOLS_ENABLED
 	GDREGISTER_CLASS(EditorInspectorPluginBind);

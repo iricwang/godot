@@ -3,12 +3,26 @@
 /**************************************************************************/
 
 #include "activity.h"
+#include "../context_base.inl"
 
 #include "../application.h"
 #include "../context.h"
+#include "../standalone_application.h"
+#include "activity_manager.h"
+#include "auto_activity_loader.h"
+#include "standalone_activity_launcher.h"
 
+#include "core/config/engine.h"
 #include "core/io/resource.h"
 #include "core/object/class_db.h"
+#include "scene/main/scene_tree.h"
+#include "scene/main/window.h"
+
+Activity::Activity() {
+	// Default launcher: enables the "F6 single-Activity debug" path out of the box.
+	// Users can disable by calling set_launcher(null) or swap to a different strategy.
+	launcher = Ref<ActivityLauncher>(memnew(StandaloneActivityLauncher));
+}
 
 void Activity::set_intent(const Ref<Intent> &p_intent) {
 	intent = p_intent;
@@ -70,12 +84,10 @@ bool Activity::dispatch_back_pressed() {
 }
 
 void Activity::finish() {
-	if (context) {
-		context->finish_activity(this);
+	if (_app) {
+		_app->finish_activity(this);
 	}
 }
-
-// ---- No-history mode ----
 
 void Activity::set_no_history(bool p_no_history) {
 	no_history = p_no_history;
@@ -85,71 +97,100 @@ bool Activity::get_no_history() const {
 	return no_history;
 }
 
-// ---- Context access ----
+void Activity::set_application(Application *p_app) {
+	_app = p_app;
+}
 
 void Activity::set_context(Context *p_context) {
-	context = p_context;
+	_app = Object::cast_to<Application>(p_context);
 }
 
 Context *Activity::get_context() const {
-	return context;
+	return _app;
 }
 
-// ---- Convenience methods (delegate to context) ----
-
-void Activity::start_activity(const Ref<Intent> &p_intent) {
-	ERR_FAIL_NULL(context);
-	context->start_activity(p_intent);
+void Activity::set_launcher(const Ref<ActivityLauncher> &p_launcher) {
+	launcher = p_launcher;
 }
 
-void Activity::start_activity_with(const String &p_action, int p_flags, const Dictionary &p_extras) {
-	ERR_FAIL_NULL(context);
-	context->start_activity_with(p_action, p_flags, p_extras);
+Ref<ActivityLauncher> Activity::get_launcher() const {
+	return launcher;
 }
 
-void Activity::finish_top() {
-	ERR_FAIL_NULL(context);
-	context->finish_top();
+bool Activity::is_standalone() const {
+	return Object::cast_to<StandaloneApplication>(_app) != nullptr;
 }
 
-bool Activity::back() {
-	ERR_FAIL_NULL_V(context, false);
-	return context->back();
+void Activity::_notification(int p_what) {
+	if (p_what != NOTIFICATION_READY) {
+		return;
+	}
+	// Defer: run_standalone_bootstrap reparents/builds nodes, which must not
+	// happen during the READY pass ("parent is busy setting up children").
+	// The bootstrap self-guards (no-op when an Application is already bound, e.g.
+	// the managed flow where ActivityManager injects it before add_child).
+	call_deferred(SNAME("run_standalone_bootstrap"), true);
 }
 
-void Activity::show_dialog(const Ref<Intent> &p_intent) {
-	ERR_FAIL_NULL(context);
-	context->show_dialog_with_owner(p_intent, this);
+// ============================================================
+// Standalone bootstrap — single entry for self-hosted preview.
+// ============================================================
+//
+// Gate is intentionally minimal (the user's model): if an Application is already
+// bound, this is the normal ActivityManager-injected flow → no-op. Otherwise the
+// node self-hosts via the shared StandaloneApplication::host(). Guarded against
+// the editor so opening a scene in the inspector never spawns an Application.
+//
+// Public so launchers / tests can drive it; safe to call directly (idempotent).
+
+void Activity::run_standalone_bootstrap(bool p_play_transitions) {
+	// Already bound (managed flow or already bootstrapped) → not a preview.
+	if (_app != nullptr) {
+		return;
+	}
+	// Never self-host inside the editor.
+	if (Engine::get_singleton()->is_editor_hint()) {
+		return;
+	}
+
+	// Build the shared standalone host environment (reparents `this` under it).
+	StandaloneApplication *app = StandaloneApplication::host(this);
+	if (!app) {
+		return;
+	}
+	_app = app;
+
+	// User hook — register mock services / preset Intent extras BEFORE _on_create.
+	GDVIRTUAL_CALL(_on_setup_standalone, app);
+
+	// Register ourselves into the stack as the root activity.
+	ActivityManager *am = app->get_activity_manager();
+	if (am) {
+		Ref<Intent> bootstrap_intent = intent;
+		if (bootstrap_intent.is_null()) {
+			bootstrap_intent.instantiate();
+			bootstrap_intent->set_action("__standalone__");
+			intent = bootstrap_intent;
+		}
+		am->adopt_running_activity(this, bootstrap_intent);
+	}
+
+	// Dispatch GDScript lifecycle on the next idle tick — one frame for
+	// anchors/layout to settle after the reparent.
+	call_deferred(SNAME("_dispatch_standalone_lifecycle"), p_play_transitions);
 }
 
-void Activity::show_toast(const Ref<Toast> &p_toast) {
-	ERR_FAIL_NULL(context);
-	context->show_toast_with_owner(p_toast, this);
-}
-
-Object *Activity::get_service(const StringName &p_name) const {
-	ERR_FAIL_NULL_V(context, nullptr);
-	return context->get_service(p_name);
-}
-
-bool Activity::has_service(const StringName &p_name) const {
-	ERR_FAIL_NULL_V(context, false);
-	return context->has_service(p_name);
-}
-
-Ref<ResourceHandle> Activity::get_resource_handle(const String &p_path) {
-	ERR_FAIL_NULL_V(context, Ref<ResourceHandle>());
-	return context->get_resource_handle(p_path);
-}
-
-Ref<Resource> Activity::load_resource_sync(const String &p_path) {
-	ERR_FAIL_NULL_V(context, Ref<Resource>());
-	return context->load_resource_sync(p_path);
-}
-
-void Activity::load_resource_async(const String &p_path, const Callable &p_callback, int p_priority) {
-	ERR_FAIL_NULL(context);
-	context->load_resource_async(p_path, p_callback, p_priority);
+// Internal — wired via call_deferred from run_standalone_bootstrap.
+void Activity::_dispatch_standalone_lifecycle(bool p_play_transitions) {
+	if (!is_standalone()) {
+		return;
+	}
+	dispatch_create(Dictionary());
+	dispatch_start();
+	if (p_play_transitions && transition_in.is_valid()) {
+		transition_in->play_enter(this);
+	}
+	dispatch_resume();
 }
 
 void Activity::_bind_methods() {
@@ -164,24 +205,49 @@ void Activity::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_no_history", "no_history"), &Activity::set_no_history);
 	ClassDB::bind_method(D_METHOD("get_no_history"), &Activity::get_no_history);
 
+	ClassDB::bind_method(D_METHOD("set_application", "application"), &Activity::set_application);
 	ClassDB::bind_method(D_METHOD("set_context", "context"), &Activity::set_context);
 	ClassDB::bind_method(D_METHOD("get_context"), &Activity::get_context);
+	ClassDB::bind_method(D_METHOD("get_application"), &Activity::get_application);
 
-	ClassDB::bind_method(D_METHOD("start_activity", "intent"), &Activity::start_activity);
-	ClassDB::bind_method(D_METHOD("start_activity_with", "action", "flags", "extras"), &Activity::start_activity_with, DEFVAL(0), DEFVAL(Dictionary()));
-	ClassDB::bind_method(D_METHOD("finish_top"), &Activity::finish_top);
-	ClassDB::bind_method(D_METHOD("back"), &Activity::back);
-	ClassDB::bind_method(D_METHOD("show_dialog", "intent"), &Activity::show_dialog);
-	ClassDB::bind_method(D_METHOD("show_toast", "toast"), &Activity::show_toast);
-	ClassDB::bind_method(D_METHOD("get_service", "name"), &Activity::get_service);
-	ClassDB::bind_method(D_METHOD("has_service", "name"), &Activity::has_service);
-	ClassDB::bind_method(D_METHOD("get_resource_handle", "path"), &Activity::get_resource_handle);
-	ClassDB::bind_method(D_METHOD("load_resource_sync", "path"), &Activity::load_resource_sync);
-	ClassDB::bind_method(D_METHOD("load_resource_async", "path", "callback", "priority"), &Activity::load_resource_async, DEFVAL(Callable()), DEFVAL(0));
+	ClassDB::bind_method(D_METHOD("set_launcher", "launcher"), &Activity::set_launcher);
+	ClassDB::bind_method(D_METHOD("get_launcher"), &Activity::get_launcher);
+	ClassDB::bind_method(D_METHOD("is_standalone"), &Activity::is_standalone);
+	ClassDB::bind_method(D_METHOD("run_standalone_bootstrap", "play_transitions"), &Activity::run_standalone_bootstrap, DEFVAL(false));
+
+	// ---- Generic delegates (inherited from ContextBase<Activity>) — PMF static_cast ----
+	using GetServiceT = Object *(Activity::*)(const StringName &) const;
+	ClassDB::bind_method(D_METHOD("get_service", "name"), static_cast<GetServiceT>(&Activity::get_service));
+	using HasServiceT = bool (Activity::*)(const StringName &) const;
+	ClassDB::bind_method(D_METHOD("has_service", "name"), static_cast<HasServiceT>(&Activity::has_service));
+	using GetHandleT = Ref<ResourceHandle> (Activity::*)(const String &);
+	ClassDB::bind_method(D_METHOD("get_resource_handle", "path"), static_cast<GetHandleT>(&Activity::get_resource_handle));
+	using LoadSyncT = Ref<Resource> (Activity::*)(const String &);
+	ClassDB::bind_method(D_METHOD("load_resource_sync", "path"), static_cast<LoadSyncT>(&Activity::load_resource_sync));
+	using LoadAsyncT = void (Activity::*)(const String &, const Callable &, int);
+	ClassDB::bind_method(D_METHOD("load_resource_async", "path", "callback", "priority"), static_cast<LoadAsyncT>(&Activity::load_resource_async), DEFVAL(Callable()), DEFVAL(0));
+	using StartActT = void (Activity::*)(const Ref<Intent> &);
+	ClassDB::bind_method(D_METHOD("start_activity", "intent"), static_cast<StartActT>(&Activity::start_activity));
+	using StartActWithT = void (Activity::*)(const String &, int, const Dictionary &);
+	ClassDB::bind_method(D_METHOD("start_activity_with", "action", "flags", "extras"), static_cast<StartActWithT>(&Activity::start_activity_with), DEFVAL(0), DEFVAL(Dictionary()));
+	using FinishTopT = void (Activity::*)();
+	ClassDB::bind_method(D_METHOD("finish_top"), static_cast<FinishTopT>(&Activity::finish_top));
+	using BackT = bool (Activity::*)();
+	ClassDB::bind_method(D_METHOD("back"), static_cast<BackT>(&Activity::back));
+	using ShowDlgT = void (Activity::*)(const Ref<Intent> &);
+	ClassDB::bind_method(D_METHOD("show_dialog", "intent"), static_cast<ShowDlgT>(&Activity::show_dialog));
+	using ShowToastT = void (Activity::*)(Toast *);
+	ClassDB::bind_method(D_METHOD("show_toast", "toast"), static_cast<ShowToastT>(&Activity::show_toast));
+
+	// Internal trampoline for the deferred lifecycle dispatch.
+	ClassDB::bind_method(D_METHOD("_dispatch_standalone_lifecycle", "play_transitions"), &Activity::_dispatch_standalone_lifecycle);
 
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "transition_in", PROPERTY_HINT_RESOURCE_TYPE, "Transition"), "set_transition_in", "get_transition_in");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "transition_out", PROPERTY_HINT_RESOURCE_TYPE, "Transition"), "set_transition_out", "get_transition_out");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "no_history"), "set_no_history", "get_no_history");
+
+	ADD_GROUP("Standalone", "");
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "launcher", PROPERTY_HINT_RESOURCE_TYPE, "ActivityLauncher"), "set_launcher", "get_launcher");
 
 	GDVIRTUAL_BIND(_on_create, "saved_state");
 	GDVIRTUAL_BIND(_on_start);
@@ -191,4 +257,5 @@ void Activity::_bind_methods() {
 	GDVIRTUAL_BIND(_on_destroy);
 	GDVIRTUAL_BIND(_on_new_intent, "intent");
 	GDVIRTUAL_BIND(_on_back_pressed);
+	GDVIRTUAL_BIND(_on_setup_standalone, "app");
 }

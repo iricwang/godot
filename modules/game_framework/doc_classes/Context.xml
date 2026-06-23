@@ -1,14 +1,16 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="Context" inherits="Object" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+<class name="Context" inherits="Node" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
 	<brief_description>
 		Unified access point for Application-wide services.
 	</brief_description>
 	<description>
 		Android-style Context. All game_framework components that need access to shared services (Activity, Dialog, Application) go through a Context. The Context delegates to the managers owned by [Application].
 
+		[b]Implementation note (C++).[/b] Context, Activity, and Dialog all implement a pure C++ interface [code]IContext[/code] (via the CRTP mixin [code]ContextBase<Self>[/code]). This lets C++ code treat [code]Context *[/code] / [code]Activity *[/code] / [code]Dialog *[/code] uniformly when accepting an [code]IContext *[/code] parameter — mirroring Android's [code]Activity extends ContextWrapper extends Context[/code]. On the GDScript side, however, [code]activity is Context[/code] still returns [code]false[/code]: Godot's GDCLASS supports only single inheritance, and Activity is rooted at [code]Control[/code]. Use duck-typing ([code]obj.has_method("show_toast")[/code]) or [code]obj.get_application() != null[/code] in GDScript instead.
+
 		Context also provides static shortcuts for [BindingEngine] (MVVM) and [Toast] factory.
 
-		Most users interact with Context through [Activity] or [Dialog] convenience methods, or by calling [code]get_context().xxx()[/code] directly.
+		Most users interact with Context through [Activity] or [Dialog] convenience methods, or by calling [code]get_context().xxx()[/code] directly. Activity/Dialog re-export the most common Context methods directly so [code]start_activity(it)[/code] works the same as [code]get_context().start_activity(it)[/code].
 	</description>
 	<tutorials>
 	</tutorials>
@@ -127,7 +129,7 @@
 			<param index="0" name="text" type="String" />
 			<param index="1" name="duration" type="float" default="2.0" />
 			<description>
-				Creates a new plain-text [Toast]. Equivalent to [code]Toast.make_text(text, duration)[/code].
+				Creates a new plain-text [Toast] node. Equivalent to [code]Toast.make_text(text, duration)[/code]. Pass the result to [method show_toast].
 			</description>
 		</method>
 		<method name="register_activity">

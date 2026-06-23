@@ -19,6 +19,7 @@
 #include "scene/gui/label.h"
 #include "scene/gui/panel_container.h"
 #include "scene/main/canvas_item.h"
+#include "scene/main/scene_tree.h"
 #include "scene/resources/packed_scene.h"
 
 ActivityManager::ActivityManager() {
@@ -201,7 +202,7 @@ void ActivityManager::start_activity(const Ref<Intent> &p_intent) {
 
 	act->set_intent(p_intent);
 	if (app) {
-		act->set_context(app);
+		act->set_application(app);
 	}
 	// Apply FLAG_NO_HISTORY to the newly created Activity.
 	if (p_intent->has_flag(Intent::FLAG_NO_HISTORY)) {
@@ -252,6 +253,20 @@ void ActivityManager::finish_activity(Activity *p_activity) {
 	_dismiss_owned_dialogs(p_activity);
 	_cancel_owned_toasts(p_activity);
 
+	const bool was_standalone_root = p_activity->is_standalone() && stack.size() == 1;
+	// Standalone bootstrap root finishing → quit the SceneTree instead of
+	// playing an exit transition into the void. The user expects F6 +
+	// "close" to end the run, just like any normal scene would.
+	if (was_standalone_root) {
+		SceneTree *st = p_activity->get_tree();
+		if (st) {
+			st->quit();
+		}
+		// Leave the Activity in the tree — SceneTree::quit() drains the
+		// whole graph at exit, so queue_free here would race with that.
+		return;
+	}
+
 	_begin_exit(p_activity);
 
 	if (is_top && !stack.is_empty()) {
@@ -259,6 +274,20 @@ void ActivityManager::finish_activity(Activity *p_activity) {
 		next_top->set_visible(true);
 		next_top->dispatch_resume();
 	}
+}
+
+void ActivityManager::adopt_running_activity(Activity *p_activity, const Ref<Intent> &p_intent) {
+	ERR_FAIL_NULL(p_activity);
+	if (stack.find(p_activity) >= 0) {
+		return; // already adopted
+	}
+	if (p_intent.is_valid()) {
+		p_activity->set_intent(p_intent);
+	}
+	if (app) {
+		p_activity->set_application(app);
+	}
+	stack.push_back(p_activity);
 }
 
 void ActivityManager::finish_top() {
@@ -305,8 +334,8 @@ int ActivityManager::get_toast_queue_count() const {
 	return toast_queue.size();
 }
 
-Ref<Toast> ActivityManager::get_toast_queue_item(int p_idx) const {
-	ERR_FAIL_INDEX_V(p_idx, toast_queue.size(), Ref<Toast>());
+Toast *ActivityManager::get_toast_queue_item(int p_idx) const {
+	ERR_FAIL_INDEX_V(p_idx, toast_queue.size(), nullptr);
 	return toast_queue[p_idx];
 }
 
@@ -349,7 +378,7 @@ void ActivityManager::show_dialog_with_owner(const Ref<Intent> &p_intent, Object
 
 	dlg->set_intent(p_intent);
 	if (app) {
-		dlg->set_context(app);
+		dlg->set_application(app);
 	}
 	dlg->set_lifecycle_owner(p_owner);
 	root->add_child(dlg);
@@ -372,8 +401,22 @@ void ActivityManager::dismiss_dialog(Dialog *p_dialog) {
 	if (idx < 0) {
 		return;
 	}
+	// Standalone-root Dialog closing (F6'd preview with nothing else running) →
+	// quit the SceneTree instead of playing an exit transition into the void,
+	// mirroring finish_activity's was_standalone_root path.
+	const bool was_standalone_root = p_dialog->is_standalone() && stack.is_empty();
+
 	p_dialog->dispatch_dismiss();
 	dialogs.remove_at(idx);
+
+	if (was_standalone_root) {
+		SceneTree *st = p_dialog->get_tree();
+		if (st) {
+			st->quit();
+		}
+		// Leave the Dialog in the tree — SceneTree::quit() drains the graph.
+		return;
+	}
 
 	Ref<Transition> tout = p_dialog->get_transition_out();
 	Ref<Tween> tween = tout.is_valid() ? tout->play_exit(p_dialog) : Ref<Tween>();
@@ -384,23 +427,74 @@ void ActivityManager::dismiss_dialog(Dialog *p_dialog) {
 	}
 }
 
-void ActivityManager::show_toast(const Ref<Toast> &p_toast) {
+void ActivityManager::adopt_running_dialog(Dialog *p_dialog, const Ref<Intent> &p_intent) {
+	ERR_FAIL_NULL(p_dialog);
+	if (dialogs.find(p_dialog) >= 0) {
+		return; // already adopted
+	}
+	if (p_intent.is_valid()) {
+		p_dialog->set_intent(p_intent);
+	}
+	if (app) {
+		p_dialog->set_application(app);
+		// Owner = Application so the dialog is not auto-dismissed by stack churn.
+		p_dialog->set_lifecycle_owner(app);
+	}
+	dialogs.push_back(p_dialog);
+}
+
+void ActivityManager::adopt_running_toast(Toast *p_toast, const Ref<Intent> &p_intent) {
+	ERR_FAIL_NULL(p_toast);
+	if (p_intent.is_valid()) {
+		p_toast->set_intent(p_intent);
+	}
+	if (app) {
+		p_toast->set_application(app);
+		// Owner = Application so it is not auto-cancelled by stack churn.
+		p_toast->set_lifecycle_owner(app);
+	}
+	// Standalone preview: already reparented + shown by the bootstrap; bookkeeping only.
+}
+
+void ActivityManager::dismiss_toast(Toast *p_toast) {
+	if (!p_toast) {
+		return;
+	}
+	const bool was_standalone_root = p_toast->is_standalone() && stack.is_empty();
+	p_toast->dispatch_dismiss();
+
+	int idx = active_toast_panels.find(p_toast);
+	if (idx >= 0) {
+		active_toast_panels.remove_at(idx);
+	}
+
+	if (was_standalone_root) {
+		SceneTree *st = p_toast->get_tree();
+		if (st) {
+			st->quit();
+		}
+		return;
+	}
+	p_toast->queue_free();
+}
+
+void ActivityManager::show_toast(Toast *p_toast) {
 	show_toast_with_owner(p_toast, _resolve_default_owner());
 }
 
-void ActivityManager::show_toast_with_owner(const Ref<Toast> &p_toast, Object *p_owner) {
-	if (p_toast.is_null()) {
+void ActivityManager::show_toast_with_owner(Toast *p_toast, Object *p_owner) {
+	if (!p_toast) {
 		return;
 	}
 	if (p_owner) {
-		p_toast->set_owner(p_owner);
+		p_toast->set_lifecycle_owner(p_owner);
 	} else {
-		p_toast->set_owner(_resolve_default_owner());
+		p_toast->set_lifecycle_owner(_resolve_default_owner());
 	}
 
 	if (toast_mode == PARALLEL) {
 		// Parallel: spawn immediately, no queue.
-		_spawn_toast_node(p_toast);
+		_present_toast(p_toast);
 		return;
 	}
 
@@ -419,6 +513,12 @@ void ActivityManager::clear_all_toasts() {
 		}
 	}
 	active_toast_panels.clear();
+	// Pending toasts are orphan nodes (never added to the tree) — free directly.
+	for (Toast *t : toast_queue) {
+		if (t) {
+			memdelete(t);
+		}
+	}
 	toast_queue.clear();
 	toast_active = false;
 }
@@ -429,9 +529,10 @@ void ActivityManager::clear_toasts_by_owner(Object *p_owner) {
 	}
 	ObjectID owner_id = p_owner->get_instance_id();
 
-	// Remove matching toasts from the pending queue.
+	// Remove matching toasts from the pending queue (orphan nodes → memdelete).
 	for (int i = toast_queue.size() - 1; i >= 0; --i) {
 		if (toast_queue[i]->is_owned_by(owner_id)) {
+			memdelete(toast_queue[i]);
 			toast_queue.remove_at(i);
 		}
 	}
@@ -476,6 +577,7 @@ void ActivityManager::_cancel_owned_toasts(Object *p_owner) {
 	ObjectID owner_id = p_owner->get_instance_id();
 	for (int i = toast_queue.size() - 1; i >= 0; --i) {
 		if (toast_queue[i]->is_owned_by(owner_id)) {
+			memdelete(toast_queue[i]);
 			toast_queue.remove_at(i);
 		}
 	}
@@ -487,82 +589,63 @@ void ActivityManager::_show_next_toast() {
 		return;
 	}
 	toast_active = true;
-	Ref<Toast> toast = toast_queue[0];
+	Toast *toast = toast_queue[0];
 	toast_queue.remove_at(0);
-	_spawn_toast_node(toast);
+	_present_toast(toast);
 }
 
-void ActivityManager::_spawn_toast_node(const Ref<Toast> &toast) {
-	ERR_FAIL_COND(toast.is_null());
+void ActivityManager::_present_toast(Toast *toast) {
+	ERR_FAIL_NULL(toast);
 	ERR_FAIL_NULL(root);
 
-	Node *toast_node = nullptr;
-	bool is_custom = false;
-
-	// Custom scene toast: instantiate user-defined layout.
-	if (!toast->get_custom_scene().is_empty()) {
-		Ref<PackedScene> custom = ResourceLoader::load(toast->get_custom_scene(), "PackedScene");
-		if (custom.is_valid()) {
-			toast_node = custom->instantiate();
-			is_custom = true;
-		}
+	if (app) {
+		toast->set_application(app);
 	}
 
-	// Fallback: default panel + label.
-	if (!toast_node) {
-		PanelContainer *panel = memnew(PanelContainer);
-		Label *label = memnew(Label);
-		label->set_text(toast->get_text());
-		label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
-		panel->add_child(label);
-		toast_node = panel;
-	}
+	// Anchor the Toast node near the bottom-center of the root.
+	toast->set_anchor(SIDE_LEFT, 0.5);
+	toast->set_anchor(SIDE_RIGHT, 0.5);
+	toast->set_anchor(SIDE_TOP, 1.0);
+	toast->set_anchor(SIDE_BOTTOM, 1.0);
+	toast->set_h_grow_direction(Control::GROW_DIRECTION_BOTH);
+	toast->set_v_grow_direction(Control::GROW_DIRECTION_BEGIN);
+	toast->set_offset(SIDE_BOTTOM, -60);
 
-	Control *ctrl = Object::cast_to<Control>(toast_node);
-	if (ctrl) {
-		ctrl->set_anchor(SIDE_LEFT, 0.5);
-		ctrl->set_anchor(SIDE_RIGHT, 0.5);
-		ctrl->set_anchor(SIDE_TOP, 1.0);
-		ctrl->set_anchor(SIDE_BOTTOM, 1.0);
-		ctrl->set_h_grow_direction(Control::GROW_DIRECTION_BOTH);
-		ctrl->set_v_grow_direction(Control::GROW_DIRECTION_BEGIN);
-		ctrl->set_offset(SIDE_BOTTOM, -60);
-	}
-	root->add_child(toast_node);
+	root->add_child(toast);
 
-	// Parallel mode: track active panel for clear_all_toasts.
+	// The Toast node builds its own visual (default panel+label, or a subclass
+	// scene that overrides _on_create).
+	toast->dispatch_create(toast->get_intent().is_valid() ? toast->get_intent()->get_extras() : Dictionary());
+
+	// Parallel mode: track active node for clear_all_toasts.
 	if (toast_mode == PARALLEL) {
-		active_toast_panels.push_back(toast_node);
+		active_toast_panels.push_back(toast);
 	}
 
-	// _ready() has now fired on the custom node — safe to call _on_start(toast).
-	if (is_custom && toast_node->has_method("_on_start")) {
-		toast_node->call("_on_start", toast);
-	}
+	toast->set_modulate(Color(1, 1, 1, 0));
 
-	CanvasItem *ci = Object::cast_to<CanvasItem>(toast_node);
-	if (ci) {
-		ci->set_modulate(Color(1, 1, 1, 0));
-	}
-
-	Ref<Tween> tween = toast_node->create_tween();
+	Ref<Tween> tween = toast->create_tween();
 	if (tween.is_valid()) {
-		tween->tween_property(toast_node, NodePath("modulate:a"), 1.0, 0.2);
+		tween->tween_property(toast, NodePath("modulate:a"), 1.0, 0.2);
 		tween->tween_interval(toast->get_duration());
-		tween->tween_property(toast_node, NodePath("modulate:a"), 0.0, 0.3);
-		tween->tween_callback(callable_mp(this, &ActivityManager::_on_toast_finished).bind(toast_node));
+		tween->tween_property(toast, NodePath("modulate:a"), 0.0, 0.3);
+		tween->tween_callback(callable_mp(this, &ActivityManager::_on_toast_finished).bind(toast));
 	} else {
-		_on_toast_finished(toast_node);
+		_on_toast_finished(toast);
 	}
 }
 
 void ActivityManager::_on_toast_finished(Object *p_panel) {
+	Toast *toast = Object::cast_to<Toast>(p_panel);
 	Node *n = Object::cast_to<Node>(p_panel);
 	if (n) {
 		// Remove from active tracking (parallel mode).
 		int idx = active_toast_panels.find(n);
 		if (idx >= 0) {
 			active_toast_panels.remove_at(idx);
+		}
+		if (toast) {
+			toast->dispatch_dismiss();
 		}
 		n->queue_free();
 	}
@@ -581,6 +664,7 @@ void ActivityManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_loader", "loader"), &ActivityManager::set_loader);
 	ClassDB::bind_method(D_METHOD("get_loader"), &ActivityManager::get_loader);
 	ClassDB::bind_method(D_METHOD("start_activity", "intent"), &ActivityManager::start_activity);
+	ClassDB::bind_method(D_METHOD("adopt_running_activity", "activity", "intent"), &ActivityManager::adopt_running_activity);
 	ClassDB::bind_method(D_METHOD("finish_activity", "activity"), &ActivityManager::finish_activity);
 	ClassDB::bind_method(D_METHOD("finish_top"), &ActivityManager::finish_top);
 	ClassDB::bind_method(D_METHOD("back"), &ActivityManager::back);
@@ -596,8 +680,11 @@ void ActivityManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("show_dialog", "intent"), &ActivityManager::show_dialog);
 	ClassDB::bind_method(D_METHOD("show_dialog_with_owner", "intent", "owner"), &ActivityManager::show_dialog_with_owner);
 	ClassDB::bind_method(D_METHOD("dismiss_dialog", "dialog"), &ActivityManager::dismiss_dialog);
+	ClassDB::bind_method(D_METHOD("adopt_running_dialog", "dialog", "intent"), &ActivityManager::adopt_running_dialog);
 	ClassDB::bind_method(D_METHOD("show_toast", "toast"), &ActivityManager::show_toast);
 	ClassDB::bind_method(D_METHOD("show_toast_with_owner", "toast", "owner"), &ActivityManager::show_toast_with_owner);
+	ClassDB::bind_method(D_METHOD("adopt_running_toast", "toast", "intent"), &ActivityManager::adopt_running_toast);
+	ClassDB::bind_method(D_METHOD("dismiss_toast", "toast"), &ActivityManager::dismiss_toast);
 		ClassDB::bind_method(D_METHOD("clear_all_toasts"), &ActivityManager::clear_all_toasts);
 		ClassDB::bind_method(D_METHOD("clear_toasts_by_owner", "owner"), &ActivityManager::clear_toasts_by_owner);
 
@@ -628,6 +715,12 @@ void ActivityManager::cleanup_all() {
 		a->dispatch_destroy();
 		stack.remove_at(stack.size() - 1);
 		a->queue_free();
+	}
+	// Pending toasts are orphan nodes — free them directly.
+	for (Toast *t : toast_queue) {
+		if (t) {
+			memdelete(t);
+		}
 	}
 	toast_queue.clear();
 	toast_active = false;

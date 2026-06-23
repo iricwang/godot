@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="ActivityLauncher" inherits="Resource" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Strategy that decides how an [Activity], [Dialog], or [Toast] should self-bootstrap when entering the SceneTree without an [ActivityManager] hosting it.
+	</brief_description>
+	<description>
+		[Activity], [Dialog], and [Toast] each hold one [ActivityLauncher] [Ref] (default = [StandaloneActivityLauncher]). On [code]NOTIFICATION_READY[/code] the node consults its launcher; the launcher decides whether to self-host — chiefly by checking that no [Application] is bound yet (i.e. this is NOT the normal ActivityManager-injected flow) — and, if so, builds the [StandaloneApplication] host and drives the lifecycle. Although named for [Activity], the launcher operates on the shared C++ [code]IContext[/code] interface, so the same launcher serves all three node types.
+
+		Swap launchers to support new startup modes (editor "Play This", nested preview, multi-window, snapshot replay, ...) without touching [Activity] / [Dialog] themselves. Set the node's [code]launcher[/code] to [code]null[/code] to disable any auto-launch.
+
+		This base class is a no-op. Concrete subclasses ship today as C++ ([StandaloneActivityLauncher]); GDScript-authored launchers can be added via a [code]GDVIRTUAL[/code] hook in a future revision.
+	</description>
+	<tutorials>
+	</tutorials>
+</class>

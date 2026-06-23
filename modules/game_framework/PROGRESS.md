@@ -540,6 +540,210 @@ class BoolToTextConverter:
 
 Test 1-10 全部通过 ✅，无 GDScript parse 警告。
 
+### 阶段 18 — Activity Run-As-Standalone（F6 单 Activity 调试）✅（已完成，2026-06-22）
+
+**目标**：允许在编辑器里对 `xxx_activity.tscn` 按 F6 直接运行单个 Activity 验证 UI/绑定，**业务代码零修改**，**零项目配置**。
+
+**核心变更**：
+- `Activity.h` 新增 `BootMode { BOOT_AUTO, BOOT_STANDALONE, BOOT_MANAGED }` 枚举 + `standalone` / `standalone_play_transitions` 成员 + `_standalone_app` / `_standalone_root` 内部指针 + GDVIRTUAL1(`_on_setup_standalone`, Application *)。
+- `Activity::_notification(NOTIFICATION_READY)` 4-门 gate：boot_mode != MANAGED && context == nullptr && !is_editor_hint() && current_scene == this → `call_deferred("_bootstrap_standalone")`。
+- `_bootstrap_standalone()` 工作流：
+  1. 在 `SceneTree.root` 下 `memnew(Application)` + `StandaloneRoot:Control`（anchors=FULL_RECT）；
+  2. `set_current_scene(_standalone_app)` 保证 SceneTree 状态一致；
+  3. `reparent(_standalone_root)` 把 Activity 移到 StandaloneRoot 下（layering / 输入路径与 managed 路径一致）；
+  4. `app->initialize(StandaloneRoot)` 装管理器，`ActivityManager.set_loader(AutoActivityLoader(base="res://"))` 让跨 Activity 跳转开箱即用；
+  5. `GDVIRTUAL_CALL(_on_setup_standalone, app)` 给业务注册 mock service 的机会；
+  6. `ActivityManager.adopt_running_activity(this, intent)` 把自己入栈；
+  7. `call_deferred("_standalone_dispatch_lifecycle")` → 下一帧统一派发 `_on_create → _on_start → _on_resume`。
+- `ActivityManager::adopt_running_activity(Activity*, Ref<Intent>)` 新接口：把已经在 SceneTree 里的 Activity 加入 stack，不 add_child / 不派发生命周期。
+- `ActivityManager::finish_activity` 检测 standalone-root（stack.size==1 且 is_standalone()）时改走 `SceneTree::quit()`，跳过 `_begin_exit`（不播 exit transition，不 queue_free 自己）。
+
+**默认行为**：
+- 默认 `BOOT_AUTO`，无须改任何 Activity 子类。
+- 默认 standalone 不预注册任何 service —— 业务在 `_on_setup_standalone(app)` 自助注册。
+- 默认 `standalone_play_transitions=false`（避免 F6 一开屏看不见）。
+
+**入口 / 退出语义**：
+- F6 / `godot --path . xxx_activity.tscn` → Activity 自启动；
+- `back()` / `finish()` 在 standalone root 时调 `SceneTree::quit()`；
+- 子 Activity 跳转走原 stack（`start_activity(intent)`），最后 pop 到 standalone root 后 finish 再 quit。
+
+**验证（headless，exit 0）**：
+- `current_scene` 被替换为 `StandaloneApplication`；
+- Activity 已 reparent 到 `StandaloneRoot/`；
+- `Activity.is_standalone() == true`；
+- `Activity.get_context() == standalone Application`；
+- `show_toast` 不崩；
+- `ActivityManager.stack_size == 1` 且 top 为本 Activity；
+- `finish()` → `SceneTree.quit()` 干净退出。
+
+**文件**：
+- `ui/activity.h/cpp` — 4-门 gate + `_bootstrap_standalone` + 新 properties；
+- `ui/activity_manager.h/cpp` — `adopt_running_activity` + standalone-aware finish；
+- `doc_classes/Activity.xml` — 新增 Run-As-Standalone 章节 + `_on_setup_standalone` / `is_standalone` / 3 个 enum 常量 / 2 个 export property 文档。
+
+### 阶段 19 — IContext 接口 + CRTP 重构（Android Context 模型，C++ 层 "is-a"）✅（已完成，2026-06-22）
+
+**目标**：消除 Activity / Dialog 与 Context 之间的"组合 + 手写 14×重复 delegate"模式，按 Android `Activity extends ContextWrapper extends Context` 的思路引入 C++ 层 "is-a IContext" 关系，让 Activity / Dialog / Context 三方在 C++ 端可统一接受 `IContext *`。
+
+**关键约束（用户明确）**：
+- GDScript ABI 100% 不变（方法名 / 签名 / 默认值全部保留）。
+- 现有 GDScript 业务代码（gf_test 18 项自动化测试 + standalone Activity demo）零修改回归通过。
+- 不动 Toast owner 链（future work，3 处 `_resolve_default_owner()` 仍返 `Object *`）。
+
+**架构终态**：
+```
+IContext                              ← pure C++ interface, 2 纯虚 (get_application + as_object)
+   ▲ implements via CRTP
+   │
+   ContextBase<Self>                  ← template mixin, 12 个 inline 默认实现，routing through
+      ▲                                  static_cast<Self*>(this)->get_application()
+      │
+      ├─ Context : Node, ContextBase<Context>        ← GDCLASS 保留 (向后兼容 + 静态工厂)
+      │      └─ Application : Context                ← Manager 持有方
+      │
+      ├─ Activity : Control, ContextBase<Activity>   ← C++ is-a IContext
+      └─ Dialog   : Control, ContextBase<Dialog>     ← C++ is-a IContext
+```
+
+**核心变更**：
+- 新增 3 个文件：
+  - `context_interface.h` — `class IContext { virtual Application *get_application() const = 0; virtual Object *as_object() = 0; }`。
+  - `context_base.h` — `template <typename Self> class ContextBase : public IContext` 提供 12 个 delegate 方法**声明**（仅前向声明，避免 application.h ↔ context.h 循环依赖）。
+  - `context_base.inl` — 12 个 template 方法**定义**，由 implementer 的 .cpp 顶部 include。
+- 改造 `Context`：`public Node, public ContextBase<Context>`，删 12 个手写 delegate，保留 7 个 Context-only 方法（finish_activity / get_current_activity / get_stack_size / owner 重载 / register_activity / change_scene\* / static MVVM）。
+- 改造 `Activity`：`public Control, public ContextBase<Activity>`，原 `Context *context` 字段 → `Application *_app`。`set_context(Context*)` 保留为安全 `Object::cast_to<Application>` alias，`get_context()` 返回 `_app`（Application IS-A Context，隐式 upcast）。新增 `set_application(Application*)` / `get_application()` 显式接口。删 12 个 delegate 实现。
+- 改造 `Dialog`：同 Activity，5 个 delegate 删干净。
+- 改造 `ActivityManager`：3 处 `set_context(app)` → `set_application(app)`，语义更精准。
+
+**ClassDB 绑定技巧**：CRTP 基类方法用 PMF static_cast 桥接 —— `using ShowToastT = void (Activity::*)(const Ref<Toast> &); ClassDB::bind_method(D_METHOD("show_toast", "toast"), static_cast<ShowToastT>(&Activity::show_toast));` —— Spike 已证明可行。
+
+**编译期循环依赖解法**：context_base.h 只放方法**声明**，全部 manager 类前向声明；模板方法**定义**放 `.inl`，由具体 .cpp 在 include application.h 后 include。
+
+**LoC 减少（粗估）**：
+- `activity.h/cpp` 减少 ~140 行手写 delegate；
+- `dialog.h/cpp` 减少 ~60 行手写 delegate；
+- `context.h/cpp` 减少 ~50 行手写实现；
+- 共减少约 250 行重复代码；新增 ~150 行 CRTP 基础设施（3 个新头文件） — 净减少约 100 行，但**每加一个 Context 方法**只动 ContextBase 一处（之前要改 3 处）。
+
+**验证（8 项 headless 端到端，exit 0）**：
+1. standalone bootstrap（enhanced_input_activity.tscn F6）
+2. Context 静态方法仍可用（bind_property / make_toast）
+3. `Activity.get_context()` 返回 Application（验证 IS-A Context 关系）
+4. `Activity.get_application()` 等效返回
+5. `Activity.show_toast` 走 ContextBase 不崩
+6. `Activity.get_service` 不崩（无服务返 null）
+7. `Activity.start_activity(detail)` → stack=2，detail 也拿到同一 Application
+8. `back()` 回 standalone，`finish()` → quit 干净
+
+**未完成的 future work（用户决策推迟）**：
+- Toast::set_owner(IContext\*) 强类型化 + ActivityManager `_resolve_default_owner()` 返 `IContext *`。C++ 调用方目前可通过 `IContext::as_object()` 桥接，足够用。
+- GDScript 端 `activity is Context` 仍返 false（Godot GDCLASS 单继承约束）。文档已注明。
+
+**文件**：
+- `context_interface.h` / `context_base.h` / `context_base.inl`（新）
+- `context.h/cpp` / `application.h/cpp`（继承链调整 — Application 自动通过 Context 继承 ContextBase<Context>）
+- `ui/activity.h/cpp` / `ui/dialog.h/cpp`（多继承 + 删 delegate）
+- `ui/activity_manager.cpp`（set_context → set_application）
+- `doc_classes/Context.xml` / `doc_classes/Activity.xml` / `doc_classes/Dialog.xml`（新增 IContext 实现说明 + set_application/get_application 文档）
+
+### 阶段 20 — ActivityLauncher 策略对象（移除 Activity 内 4-门 gate）✅（已完成，2026-06-22）
+
+**目标**：消除 `Activity::_notification(NOTIFICATION_READY)` 内"4 门 gate + BootMode 枚举"的硬编码启动检测；把启动逻辑外置成可替换的策略对象，让 Activity 不再知道"自己是不是入口"。
+
+**核心问题（阶段 18 留下的）**：
+```cpp
+void Activity::_notification(int p_what) {  // 18 行 if-梯子
+    if (standalone || boot_mode == BOOT_MANAGED || _app != nullptr) return;
+    if (Engine::is_editor_hint()) return;
+    if (get_tree() == nullptr) return;
+    if (boot_mode == BOOT_AUTO && get_tree()->get_current_scene() != this) return;
+    call_deferred("_bootstrap_standalone");
+}
+```
+- 违反 SRP：Activity 同时是"演员"和"启动器"。
+- 不可单测：检测逻辑与 SceneTree / Engine 强耦合。
+- 难扩展：加新模式（编辑器预览 / 嵌套 Activity / 多窗口）必改 Activity。
+
+**架构终态**：
+```
+ActivityLauncher : Resource         ← 抽象启动策略
+   ▲
+   └─ StandaloneActivityLauncher    ← 默认实例：F6 单 Activity 调试
+      (force_standalone, play_transitions 两个开关)
+
+Activity : Control
+   - 字段 launcher: Ref<ActivityLauncher>  ← 默认 = StandaloneActivityLauncher
+   - _notification(READY): launcher->try_launch(this)  ← 1 行
+   - run_standalone_bootstrap(bool): 由 launcher 通过 call_deferred 调
+```
+
+**关键变更**：
+- 新增 `ui/activity_launcher.h/cpp` — `ActivityLauncher : Resource` 抽象基类，`virtual bool try_launch(Activity*) { return false; }`。
+- 新增 `ui/standalone_activity_launcher.h/cpp` — 默认 launcher 实现，5 个 gate 检查通过后 `p_activity->call_deferred("run_standalone_bootstrap", play_transitions)`。
+- 改 `Activity.h/cpp`：
+  - 删 `enum BootMode { BOOT_AUTO/STANDALONE/MANAGED }` + `boot_mode` / `standalone_play_transitions` / `_standalone_app` / `_standalone_root` 字段；
+  - 加 `Ref<ActivityLauncher> launcher` 字段 + 默认构造 `StandaloneActivityLauncher`；
+  - `_notification(READY)` 从 18 行收缩为 3 行（含 if 头尾）；
+  - 原 `_bootstrap_standalone()` 改名为 public `run_standalone_bootstrap(bool play_transitions)`，作为 launcher 和测试的稳定入口；
+  - 内部 `_dispatch_standalone_lifecycle(bool)` 是 deferred lifecycle 派发的 trampoline。
+- `register_types.cpp` 注册 2 个新类。
+
+**默认行为不变**：未配置过的 Activity 仍然 F6 即跑，因为构造函数装上默认 `StandaloneActivityLauncher`。
+
+**GDScript ABI 变化**：
+- 删除：`Activity.boot_mode` / `set_boot_mode` / `get_boot_mode` / 3 个 `BOOT_*` 常量 / `standalone_play_transitions` / `set/get_standalone_play_transitions`。
+- 新增：`Activity.launcher` (Ref<ActivityLauncher>) / `set_launcher` / `get_launcher` / `run_standalone_bootstrap(play_transitions)`。
+- 保留：`is_standalone()` / `_on_setup_standalone(app)` 不变。
+- 业务侧已知用法（gf_test）：之前没用过 BootMode 任何 const，所以零迁移成本。
+
+**LoC 净变化**：
+- `activity.h/cpp` 净减 ~30 行（删 standalone 内部细节，加策略字段）；
+- 新增 ~80 行 launcher 基础设施；
+- 总体 +50 行，但每个类 SRP 清晰。
+
+**验证（headless 8 项 + 编译）**：
+1. T1+T2 默认 launcher bootstrap，is_standalone=true；
+2. T3 默认 launcher 实例确实是 StandaloneActivityLauncher；
+3. T4 show_toast / get_service 走 ContextBase 仍正常；
+4. T5 跨 Activity 跳转 stack +1；
+5. T6 back 回 standalone；
+6. T7 finish→quit 干净；
+7. T8 `act.set_launcher(null)` 后 `_notification` 完全不动作（is_standalone=false, Application=null）；
+8. scons 重编 + 链接二进制 0 error。
+
+**未来扩展点（不改 Activity）**：
+- `EditorPreviewLauncher` — 编辑器侧 Play Scene 按钮触发；
+- `NestedActivityLauncher` — 嵌套预览，Activity 作为子节点；
+- `SnapshotReplayLauncher` — 回放测试；
+- 加 `GDVIRTUAL1R(bool, _try_launch, Object*)` 让 GDScript 也能写 launcher。
+
+**文件**：
+- `ui/activity_launcher.h/cpp`（新）
+- `ui/standalone_activity_launcher.h/cpp`（新）
+- `ui/activity.h/cpp` — 简化 _notification + 用 launcher
+- `register_types.cpp` — 注册 ActivityLauncher / StandaloneActivityLauncher
+- `doc_classes/Activity.xml` — 删 BootMode 文档 + 加 launcher member
+- `doc_classes/ActivityLauncher.xml` / `StandaloneActivityLauncher.xml`（新）
+
+### 阶段 21 — StandaloneApplication 封装 + Toast 升级为 Context 节点（同 Dialog）✅（已完成，2026-06-22）
+
+**目标**：消除 Activity/Dialog 各自重复的 standalone host 构建；把 Toast 从 `RefCounted` 描述符升级为 `Control + ContextBase<Toast>` 节点，三者统一可单独 F6 预览。
+
+**核心变更**：
+- **新增 `StandaloneApplication : Application`**（`standalone_application.h/.cpp`，模块根）。静态 `host(Control*)` 封装公共宿主图：建 app + `StandaloneRoot`(FULL_RECT) → `root_window->add_child` → 若入参是 current_scene 则 `set_current_scene(app)` → reparent 入参 → `initialize` → 装 `AutoActivityLoader("res://")`。`register_types` 注册。
+- **三节点 `run_standalone_bootstrap` 收敛**为：`host(this)` → `_on_setup_standalone` → `adopt_running_<activity|dialog|toast>` → 派发生命周期。自带门禁：`_app != null`（managed 流程）或 `is_editor_hint()` → no-op。
+- **`is_standalone()` 派生**：删三者的 `bool standalone` 成员，改 `Object::cast_to<StandaloneApplication>(_app) != nullptr`。standalone-ness 是 Application 类型的属性。
+- **Toast 重写**（`ui/toast.{h,cpp}`）：`RefCounted`→`Control + ContextBase<Toast>`；`make_text` 返回 `Toast*`；默认 `dispatch_create` 内建 panel+label（脚本未覆写 `_on_create` 时）；`owner`→`lifecycle_owner`（避让 `Node::set_owner`）；**删 `custom_scene`**（自定义 toast = 根 `extends Toast` 的场景）；加 `launcher`/`_on_create`/`_on_dismiss`/`_on_setup_standalone`/`dismiss`/`run_standalone_bootstrap`。
+- **ActivityManager toast 管线重写**：`toast_queue` `Vector<Ref<Toast>>`→`Vector<Toast*>`；`_spawn_toast_node`→`_present_toast(Toast*)`（节点自身 add_child + dispatch_create + fade tween）；新增 `adopt_running_toast`/`dismiss_toast`；队列清理对未入树孤儿节点用 `memdelete`。
+- **签名变更**：`Context`/`ContextBase` 的 `show_toast`/`show_toast_with_owner`/`make_toast` 由 `Ref<Toast>`→`Toast*`；5 处 ClassDB PMF 别名同步。
+
+**关键修复**：Activity `_notification(READY)` 直调 `run_standalone_bootstrap` 会在 READY 期间改树（"parent is busy setting up children"）→ 改 `call_deferred`。Dialog/Toast 经 launcher 已是 deferred。
+
+**gf_test 迁移**：`core/toast_custom.gd` `extends MarginContainer`→`extends Toast`（UI 移 `_on_create`）；`core/scenes/toast_custom.tscn` 根 type→`Toast`；`main_activity.gd:_on_toast_custom` 改 `instantiate()+show_toast`；新增 `tests/{dialog,toast}_standalone_test.tscn`。
+
+**验证现状**：C++ 编译 0 error；`dialog_standalone_test` / `toast_standalone_test` headless 功能断言 **PASS**（`_on_setup_standalone`/`_on_create`/`_on_dismiss` 链正确）。**遗留待查**：(1) 单 Activity/Dialog/Toast 退出时偶发 segfault(139)（PASS 之后、teardown 阶段）；(2) `scenes/entry.tscn` 18 项回归在 banner 后无输出（疑似 `change_scene(game.tscn)` 或 deferred bootstrap 与 managed 流程交互），需进一步定位。`run/main_scene` 当前指向 `enhanced_input_activity.tscn`（单 Activity 入口），跑 18 项回归须显式 `res://scenes/entry.tscn`。
+
 ## 6. 构建与验证
 
 - 编译:`build.bat`(增量;新增/改文件后重跑)。`ui/`、`mvvm/`、`resource/`、`service/` 已在 `SCsub` 通配,新增 `.cpp` 自动纳入。

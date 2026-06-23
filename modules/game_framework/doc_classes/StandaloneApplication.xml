@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="StandaloneApplication" inherits="Application" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		An [Application] that self-hosts a single UI node for preview (F6 / Run-As-Standalone).
+	</brief_description>
+	<description>
+		StandaloneApplication encapsulates the host-graph construction shared by [Activity], [Dialog], and [Toast] when they run on their own — e.g. pressing F6 on a single [code]*_activity.tscn[/code] / [code]*_dialog.tscn[/code] in the editor, or [code]godot --path . <scene>.tscn[/code].
+
+		The static [method host] builds:
+		[codeblock]
+		SceneTree.root
+		  └─ StandaloneApplication
+		     └─ StandaloneRoot (Control, FULL_RECT)
+		        └─ <the UI node>   (reparented here)
+		[/codeblock]
+		It wires the managers ([method Application.initialize]) and installs a default [AutoActivityLoader] rooted at [code]res://[/code] so cross-screen navigation works without manual registration.
+
+		"Is this node running standalone?" is answered by whether its bound [Application] is a StandaloneApplication ([method Object.is_class] / C++ cast) — there is no per-node boolean flag, because standalone-ness is a property of the hosting Application. See [method Activity.is_standalone] / [method Dialog.is_standalone] / [method Toast.is_standalone].
+
+		Users normally never construct this directly; the node's [code]run_standalone_bootstrap[/code] calls [method host] for them.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_standalone_root" qualifiers="const">
+			<return type="Control" />
+			<description>
+				Returns the [code]StandaloneRoot[/code] [Control] under which the previewed UI node is parented, or [code]null[/code] before [method host] has run.
+			</description>
+		</method>
+		<method name="host" qualifiers="static">
+			<return type="StandaloneApplication" />
+			<param index="0" name="ui" type="Control" />
+			<description>
+				Builds the standalone host environment around [param ui] (which must already be in a [SceneTree]), reparents [param ui] under [code]StandaloneRoot[/code], wires the managers, and installs a default [AutoActivityLoader]. Returns the new StandaloneApplication (already added to the tree), or [code]null[/code] on failure. The caller is responsible for adopting [param ui] into the manager and dispatching its lifecycle.
+			</description>
+		</method>
+	</methods>
+</class>

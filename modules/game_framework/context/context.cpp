@@ -7,18 +7,21 @@
 
 #include "application.h"
 #include "core/config/engine.h"
-#include "mvvm/binding_engine.h"
-#include "mvvm/value_converter.h"
-#include "mvvm/view_model.h"
-#include "resource/resource_handle.h"
-#include "resource/resource_manager.h"
-#include "service/service_registry.h"
-#include "ui/activity.h"
-#include "ui/activity_manager.h"
-#include "ui/dialog.h"
-#include "ui/intent.h"
-#include "ui/scene_service.h"
-#include "ui/toast.h"
+#include "../mvvm/binding_engine.h"
+#include "../mvvm/value_converter.h"
+#include "../mvvm/view_model.h"
+#include "../resource/resource_handle.h"
+#include "../resource/resource_manager.h"
+#include "../service/service_registry.h"
+#include "../ui/activity.h"
+#include "../ui/activity_manager.h"
+#include "../ui/proxy/activity_proxy.h"
+#include "../ui/dialog.h"
+#include "../ui/proxy/dialog_proxy.h"
+#include "../ui/intent.h"
+#include "../ui/scene_service.h"
+#include "../ui/toast.h"
+#include "../ui/proxy/toast_proxy.h"
 
 #include "core/object/class_db.h"
 #include "scene/main/node.h"
@@ -53,9 +56,9 @@ void Context::finish_activity(Activity *p_activity) {
 	app->get_activity_manager()->finish_activity(p_activity);
 }
 
-void Context::show_dialog_with_owner(const Ref<Intent> &p_intent, Object *p_owner) {
-	ERR_FAIL_NULL(app);
-	app->get_activity_manager()->show_dialog_with_owner(p_intent, p_owner);
+Ref<DialogProxy> Context::show_dialog_with_owner(const Ref<Intent> &p_intent, Object *p_owner) {
+	ERR_FAIL_NULL_V(app, Ref<DialogProxy>());
+	return app->get_activity_manager()->show_dialog_with_owner(p_intent, p_owner);
 }
 
 void Context::dismiss_dialog(Dialog *p_dialog) {
@@ -63,9 +66,9 @@ void Context::dismiss_dialog(Dialog *p_dialog) {
 	app->get_activity_manager()->dismiss_dialog(p_dialog);
 }
 
-void Context::show_toast_with_owner(Toast *p_toast, Object *p_owner) {
-	ERR_FAIL_NULL(app);
-	app->get_activity_manager()->show_toast_with_owner(p_toast, p_owner);
+Ref<ToastProxy> Context::show_toast_with_owner(Toast *p_toast, Object *p_owner) {
+	ERR_FAIL_NULL_V(app, Ref<ToastProxy>());
+	return app->get_activity_manager()->show_toast_with_owner(p_toast, p_owner);
 }
 
 void Context::clear_all_toasts() {
@@ -148,11 +151,11 @@ void Context::_bind_methods() {
 	LoadAsyncT load_async_pmf = static_cast<LoadAsyncT>(&Context::load_resource_async);
 	ClassDB::bind_method(D_METHOD("load_resource_async", "path", "callback", "priority"), load_async_pmf, DEFVAL(Callable()), DEFVAL(0));
 
-	using StartActT = void (Context::*)(const Ref<Intent> &);
+	using StartActT = Ref<ActivityProxy> (Context::*)(const Ref<Intent> &);
 	StartActT start_act_pmf = static_cast<StartActT>(&Context::start_activity);
 	ClassDB::bind_method(D_METHOD("start_activity", "intent"), start_act_pmf);
 
-	using StartActWithT = void (Context::*)(const String &, int, const Dictionary &);
+	using StartActWithT = Ref<ActivityProxy> (Context::*)(const String &, int, const Dictionary &);
 	StartActWithT start_act_with_pmf = static_cast<StartActWithT>(&Context::start_activity_with);
 	ClassDB::bind_method(D_METHOD("start_activity_with", "action", "flags", "extras"), start_act_with_pmf, DEFVAL(0), DEFVAL(Dictionary()));
 
@@ -164,11 +167,11 @@ void Context::_bind_methods() {
 	BackT back_pmf = static_cast<BackT>(&Context::back);
 	ClassDB::bind_method(D_METHOD("back"), back_pmf);
 
-	using ShowDlgT = void (Context::*)(const Ref<Intent> &);
+	using ShowDlgT = Ref<DialogProxy> (Context::*)(const Ref<Intent> &);
 	ShowDlgT show_dlg_pmf = static_cast<ShowDlgT>(&Context::show_dialog);
 	ClassDB::bind_method(D_METHOD("show_dialog", "intent"), show_dlg_pmf);
 
-	using ShowToastT = void (Context::*)(Toast *);
+	using ShowToastT = Ref<ToastProxy> (Context::*)(Toast *);
 	ShowToastT show_toast_pmf = static_cast<ShowToastT>(&Context::show_toast);
 	ClassDB::bind_method(D_METHOD("show_toast", "toast"), show_toast_pmf);
 

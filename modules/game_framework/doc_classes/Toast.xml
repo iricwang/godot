@@ -8,7 +8,7 @@
 
 		A custom layout is authored as a scene whose root extends Toast and overrides [method _on_create] to build its UI — exactly like [Dialog]. The old [code]custom_scene[/code] indirection has been removed.
 
-		Toast is a C++ "is-a IContext" via the [code]ContextBase&lt;Toast&gt;[/code] CRTP mixin — at the C++ level it [i]is[/i] a Context. Like [Activity] / [Dialog] it can self-host for preview (F6) through its [member launcher]: when no [Application] is bound (i.e. it is the entry scene, not shown via [method Context.show_toast]), it spawns a [StandaloneApplication] and dispatches [method _on_create]. Override [method _on_setup_standalone] to register mock services first.
+		Toast is a C++ "is-a IContext" via the [code]ContextBase&lt;Toast&gt;[/code] CRTP mixin — at the C++ level it [i]is[/i] a Context. Like [Activity] / [Dialog] it auto-bootstraps for preview (F6) on [code]NOTIFICATION_READY[/code] via [method run_standalone_bootstrap]: when no [Application] is bound (i.e. it is the entry scene, not shown via [method Context.show_toast]) and not in the editor, it spawns a [StandaloneApplication] and dispatches [method _on_create]. Override [method _on_setup_standalone] to register mock services first.
 
 		Each Toast has an optional lifecycle owner (set by [ActivityManager]). When the owning [Activity] is destroyed, its pending toasts are cancelled.
 	</description>
@@ -99,7 +99,7 @@
 			<return type="void" />
 			<param index="0" name="play_transitions" type="bool" default="false" />
 			<description>
-				Builds the standalone host ([StandaloneApplication] + StandaloneRoot), reparents this Toast under it, and dispatches [method _on_create]. Normally driven by [member launcher]; exposed for custom launchers / tests. Self-guards: no-op if an [Application] is already bound or running in the editor.
+				Builds the standalone host ([StandaloneApplication] + StandaloneRoot), reparents this Toast under it, and dispatches [method _on_create]. Normally invoked from [code]_notification(NOTIFICATION_READY)[/code] via [code]call_deferred[/code]; exposed for tests. Self-guards: no-op if an [Application] is already bound or running in the editor.
 			</description>
 		</method>
 		<method name="set_duration">
@@ -127,9 +127,6 @@
 	<members>
 		<member name="duration" type="float" setter="set_duration" getter="get_duration" default="2.0">
 			Display duration in seconds (excluding fade-in/out).
-		</member>
-		<member name="launcher" type="ActivityLauncher" setter="set_launcher" getter="get_launcher">
-			The startup strategy invoked on [code]NOTIFICATION_READY[/code]. Default = [StandaloneActivityLauncher] (enables F6 single-Toast preview). Set to [code]null[/code] to disable.
 		</member>
 		<member name="text" type="String" setter="set_text" getter="get_text" default="&quot;&quot;">
 			The message text to display (used by the default visual).

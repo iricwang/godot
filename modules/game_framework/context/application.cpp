@@ -4,10 +4,10 @@
 
 #include "application.h"
 
-#include "resource/resource_manager.h"
-#include "service/service_registry.h"
-#include "ui/activity_manager.h"
-#include "ui/scene_service.h"
+#include "../resource/resource_manager.h"
+#include "../service/service_registry.h"
+#include "../ui/activity_manager.h"
+#include "../ui/scene_service.h"
 
 #include "core/object/class_db.h"
 #include "scene/gui/control.h"

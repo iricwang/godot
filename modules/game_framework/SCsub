@@ -8,8 +8,11 @@ env_gf = env_modules.Clone()
 
 module_obj = []
 env_gf.add_source_files(module_obj, "*.cpp")
+env_gf.add_source_files(module_obj, "context/*.cpp")
+env_gf.add_source_files(module_obj, "editor/*.cpp")
 env_gf.add_source_files(module_obj, "service/*.cpp")
 env_gf.add_source_files(module_obj, "resource/*.cpp")
 env_gf.add_source_files(module_obj, "ui/*.cpp")
+env_gf.add_source_files(module_obj, "ui/proxy/*.cpp")
 env_gf.add_source_files(module_obj, "mvvm/*.cpp")
 env.modules_sources += module_obj

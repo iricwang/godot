@@ -3,14 +3,16 @@
 /**************************************************************************/
 
 #include "toast.h"
-#include "../context_base.inl"
+#include "../context/context_base.inl"
 
-#include "../application.h"
-#include "../context.h"
-#include "../standalone_application.h"
+#include "../context/application.h"
+#include "../context/context.h"
+#include "../context/standalone_application.h"
 #include "activity_manager.h"
+#include "proxy/activity_proxy.h"
 #include "auto_activity_loader.h"
-#include "standalone_activity_launcher.h"
+#include "proxy/dialog_proxy.h"
+#include "proxy/toast_proxy.h"
 
 #include "core/io/resource.h"
 #include "core/object/class_db.h"
@@ -19,8 +21,6 @@
 #include "scene/main/scene_tree.h"
 
 Toast::Toast() {
-	// Default launcher: enables the "F6 single-Toast preview" path out of the box.
-	launcher = Ref<ActivityLauncher>(memnew(StandaloneActivityLauncher));
 }
 
 Toast *Toast::make_text(const String &p_text, double p_duration) {
@@ -132,15 +132,7 @@ Context *Toast::get_context() const {
 	return _app; // Application IS-A Context, implicit upcast.
 }
 
-// ---- Launcher (Run-As-Standalone) ----
-
-void Toast::set_launcher(const Ref<ActivityLauncher> &p_launcher) {
-	launcher = p_launcher;
-}
-
-Ref<ActivityLauncher> Toast::get_launcher() const {
-	return launcher;
-}
+// ---- Run-As-Standalone ----
 
 bool Toast::is_standalone() const {
 	return Object::cast_to<StandaloneApplication>(_app) != nullptr;
@@ -150,9 +142,11 @@ void Toast::_notification(int p_what) {
 	if (p_what != NOTIFICATION_READY) {
 		return;
 	}
-	if (launcher.is_valid()) {
-		launcher->try_launch(this);
-	}
+	// Defer: run_standalone_bootstrap reparents/builds nodes, which must not
+	// happen during the READY pass. The bootstrap self-guards — it's a no-op
+	// when an Application is already bound (the managed flow where
+	// ActivityManager injects it before add_child).
+	call_deferred(SNAME("run_standalone_bootstrap"), false);
 }
 
 void Toast::run_standalone_bootstrap(bool p_play_transitions) {
@@ -219,8 +213,6 @@ void Toast::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_context"), &Toast::get_context);
 	ClassDB::bind_method(D_METHOD("get_application"), &Toast::get_application);
 
-	ClassDB::bind_method(D_METHOD("set_launcher", "launcher"), &Toast::set_launcher);
-	ClassDB::bind_method(D_METHOD("get_launcher"), &Toast::get_launcher);
 	ClassDB::bind_method(D_METHOD("is_standalone"), &Toast::is_standalone);
 	ClassDB::bind_method(D_METHOD("run_standalone_bootstrap", "play_transitions"), &Toast::run_standalone_bootstrap, DEFVAL(false));
 	ClassDB::bind_method(D_METHOD("_dispatch_standalone_lifecycle", "play_transitions"), &Toast::_dispatch_standalone_lifecycle);
@@ -237,9 +229,6 @@ void Toast::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "duration"), "set_duration", "get_duration");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "transition_in", PROPERTY_HINT_RESOURCE_TYPE, "Transition"), "set_transition_in", "get_transition_in");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "transition_out", PROPERTY_HINT_RESOURCE_TYPE, "Transition"), "set_transition_out", "get_transition_out");
-
-	ADD_GROUP("Standalone", "");
-	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "launcher", PROPERTY_HINT_RESOURCE_TYPE, "ActivityLauncher"), "set_launcher", "get_launcher");
 
 	GDVIRTUAL_BIND(_on_create, "saved_state");
 	GDVIRTUAL_BIND(_on_dismiss);

@@ -4,8 +4,8 @@
 
 #include "standalone_application.h"
 
-#include "ui/activity_manager.h"
-#include "ui/auto_activity_loader.h"
+#include "../ui/activity_manager.h"
+#include "../ui/auto_activity_loader.h"
 
 #include "core/object/class_db.h"
 #include "scene/gui/control.h"
@@ -45,7 +45,7 @@ StandaloneApplication *StandaloneApplication::host(Control *p_ui) {
 
 	// 2. Reparent the UI node under StandaloneRoot. reparent() re-fires
 	// NOTIFICATION_ENTER_TREE but NOT NOTIFICATION_READY — so this won't
-	// re-trigger the launcher path on the node.
+	// re-trigger the standalone-bootstrap path on the node.
 	p_ui->reparent(root);
 	p_ui->set_anchors_preset(Control::PRESET_FULL_RECT);
 	p_ui->set_position(Point2(0, 0));

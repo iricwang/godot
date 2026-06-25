@@ -16,6 +16,9 @@ class Node;
 class Resource;
 class Intent;
 class Toast;
+class ActivityProxy;
+class DialogProxy;
+class ToastProxy;
 
 // Android-style Context. Provides a unified access point for application-wide services.
 // Application extends Context and owns all plugin instances; Activity / Dialog also implement
@@ -54,9 +57,9 @@ public:
 
 	// ---- Owner / explicit-target overloads (Application-level operations) ----
 	void finish_activity(Activity *p_activity);
-	void show_dialog_with_owner(const Ref<Intent> &p_intent, Object *p_owner);
+	Ref<DialogProxy> show_dialog_with_owner(const Ref<Intent> &p_intent, Object *p_owner);
 	void dismiss_dialog(Dialog *p_dialog);
-	void show_toast_with_owner(Toast *p_toast, Object *p_owner);
+	Ref<ToastProxy> show_toast_with_owner(Toast *p_toast, Object *p_owner);
 	void clear_all_toasts();
 	void clear_toasts_by_owner(Object *p_owner);
 

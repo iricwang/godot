@@ -6,8 +6,8 @@
 
 #include "core/object/class_db.h"
 
-#include "application.h"
-#include "context.h"
+#include "context/application.h"
+#include "context/context.h"
 #include "mvvm/binding_engine.h"
 #include "mvvm/observable_property.h"
 #include "mvvm/value_converter.h"
@@ -15,23 +15,25 @@
 #include "resource/resource_handle.h"
 #include "resource/resource_manager.h"
 #include "service/service_registry.h"
-#include "standalone_application.h"
+#include "context/standalone_application.h"
 #include "ui/activity.h"
-#include "ui/activity_launcher.h"
 #include "ui/activity_loader.h"
 #include "ui/activity_manager.h"
+#include "ui/proxy/activity_proxy.h"
 #include "ui/auto_activity_loader.h"
+#include "ui/proxy/context_proxy.h"
 #include "ui/dialog.h"
+#include "ui/proxy/dialog_proxy.h"
 #include "ui/intent.h"
 #include "ui/scene_service.h"
-#include "ui/standalone_activity_launcher.h"
 #include "ui/toast.h"
+#include "ui/proxy/toast_proxy.h"
 #include "ui/transition.h"
 
 #ifdef TOOLS_ENABLED
 #include "editor/editor_node.h"
 #include "editor/inspector/editor_inspector.h"
-#include "editor_bind_plugin.h"
+#include "editor/editor_bind_plugin.h"
 #endif
 
 void initialize_game_framework_module(ModuleInitializationLevel p_level) {
@@ -45,10 +47,12 @@ void initialize_game_framework_module(ModuleInitializationLevel p_level) {
 
 	GDREGISTER_CLASS(Intent);
 	GDREGISTER_CLASS(Transition);
+	GDREGISTER_ABSTRACT_CLASS(ContextProxy);
+	GDREGISTER_CLASS(ActivityProxy);
+	GDREGISTER_CLASS(DialogProxy);
+	GDREGISTER_CLASS(ToastProxy);
 	GDREGISTER_CLASS(ActivityLoader);
 	GDREGISTER_CLASS(AutoActivityLoader);
-	GDREGISTER_CLASS(ActivityLauncher);
-	GDREGISTER_CLASS(StandaloneActivityLauncher);
 	GDREGISTER_CLASS(Activity);
 	GDREGISTER_CLASS(Dialog);
 	GDREGISTER_CLASS(Toast);

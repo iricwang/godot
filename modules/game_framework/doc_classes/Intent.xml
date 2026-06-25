@@ -12,6 +12,7 @@
 		- [code]FLAG_NO_HISTORY[/code] (4): don't keep the new Activity in the back stack
 		- [code]FLAG_REORDER_TO_FRONT[/code] (8): bring existing Activity to the top without destroying
 		- [code]FLAG_NEW_CLEAR[/code] (16): clear the entire stack before starting
+		- [code]FLAG_LOAD_SYNC[/code] (32): force the synchronous load path (skip async ResourceLoader thread + per-frame poll). Use this for tiny scenes where the extra frame of latency matters more than smoothness, or for tests that need a deterministic, immediate result.
 
 		Flags can be combined with bitwise OR: [code]intent.set_flag(Intent.FLAG_SINGLE_TOP); intent.set_flag(Intent.FLAG_NO_HISTORY)[/code].
 	</description>
@@ -114,6 +115,9 @@
 		</constant>
 		<constant name="FLAG_NEW_CLEAR" value="16" enum="Flag">
 			Clear the entire back stack and all dialogs before starting this Activity.
+		</constant>
+		<constant name="FLAG_LOAD_SYNC" value="32" enum="Flag">
+			Force the synchronous load path: [ActivityManager] calls [code]ResourceLoader.load(...)[/code] directly and attaches the Activity within the same call instead of returning a [code]LOADING[/code] [ActivityProxy] that flips to [code]READY[/code] on a later frame. Useful for tests and tiny scenes. Web / single-threaded platforms always behave like this regardless of the flag.
 		</constant>
 	</constants>
 </class>

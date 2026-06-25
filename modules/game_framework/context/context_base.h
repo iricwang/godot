@@ -19,6 +19,9 @@ class Application;
 class Intent;
 class Toast;
 class ResourceHandle;
+class ActivityProxy;
+class DialogProxy;
+class ToastProxy;
 
 // ContextBase — CRTP mixin providing the full Context-style delegate API.
 //
@@ -52,14 +55,14 @@ public:
 	void load_resource_async(const String &p_path, const Callable &p_callback = Callable(), int p_priority = 0);
 
 	// ---- Navigation ----
-	void start_activity(const Ref<Intent> &p_intent);
-	void start_activity_with(const String &p_action, int p_flags = 0, const Dictionary &p_extras = Dictionary());
+	Ref<ActivityProxy> start_activity(const Ref<Intent> &p_intent);
+	Ref<ActivityProxy> start_activity_with(const String &p_action, int p_flags = 0, const Dictionary &p_extras = Dictionary());
 	void finish_top();
 	bool back();
 
 	// ---- Overlays (pass `this` as the lifecycle owner) ----
-	void show_dialog(const Ref<Intent> &p_intent);
-	void show_toast(Toast *p_toast);
+	Ref<DialogProxy> show_dialog(const Ref<Intent> &p_intent);
+	Ref<ToastProxy> show_toast(Toast *p_toast);
 
 protected:
 	Application *_ctx_app() const { return static_cast<const Self *>(this)->get_application(); }

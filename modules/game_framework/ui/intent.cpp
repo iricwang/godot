@@ -70,11 +70,12 @@ void Intent::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "action"), "set_action", "get_action");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "data"), "set_data", "get_data");
 	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "extras"), "set_extras", "get_extras");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "flags", PROPERTY_HINT_FLAGS, "SingleTop:1,ClearTop:2,NoHistory:4,ReorderToFront:8,NewClear:16"), "set_flags", "get_flags");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "flags", PROPERTY_HINT_FLAGS, "SingleTop:1,ClearTop:2,NoHistory:4,ReorderToFront:8,NewClear:16,LoadSync:32"), "set_flags", "get_flags");
 
 	BIND_ENUM_CONSTANT(FLAG_SINGLE_TOP);
 	BIND_ENUM_CONSTANT(FLAG_CLEAR_TOP);
 	BIND_ENUM_CONSTANT(FLAG_NO_HISTORY);
 	BIND_ENUM_CONSTANT(FLAG_REORDER_TO_FRONT);
 	BIND_ENUM_CONSTANT(FLAG_NEW_CLEAR);
+	BIND_ENUM_CONSTANT(FLAG_LOAD_SYNC);
 }

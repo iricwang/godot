@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="ToastProxy" inherits="ContextProxy" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		ContextProxy entry held by ActivityManager's toast queue.
+	</brief_description>
+	<description>
+		Created by [method Context.show_toast]. In SERIAL display mode the proxy stays in [constant ContextProxy.STATE_PENDING] until it pops to the front of the queue and is shown; in PARALLEL mode it transitions to READY immediately.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_toast" qualifiers="const">
+			<return type="Toast" />
+			<description>
+				Returns the attached [Toast], or [code]null[/code] if the node has not been shown / has been freed.
+			</description>
+		</method>
+	</methods>
+</class>

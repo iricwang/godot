@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="ContextProxy" inherits="RefCounted" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Async record placed in the ActivityManager stack/queues while the real node is still loading.
+	</brief_description>
+	<description>
+		ContextProxy is the lightweight, ref-counted record [ActivityManager] holds in its stack, dialogs and toast queue. It is created synchronously at the call site of [method Context.start_activity], [method Context.show_dialog] or [method Context.show_toast] so flag matching (SINGLE_TOP/CLEAR_TOP/...) and stack-size queries remain consistent even while the underlying scene is still being loaded on a background thread.
+
+		Concrete subclasses are [ActivityProxy], [DialogProxy] and [ToastProxy]. Listen to [signal ready] to obtain the underlying [Node] once it is attached, or [signal cancelled]/[signal failed] for the unhappy paths.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="cancel">
+			<return type="void" />
+			<description>
+				Request cancellation. Only meaningful while the proxy is [constant STATE_PENDING] or [constant STATE_LOADING]; terminal states ignore.
+			</description>
+		</method>
+		<method name="get_action" qualifiers="const">
+			<return type="String" />
+			<description>
+				Convenience accessor for [code]get_intent().get_action()[/code].
+			</description>
+		</method>
+		<method name="get_application" qualifiers="const">
+			<return type="Application" />
+			<description>
+				Returns the [Application] that owns this proxy.
+			</description>
+		</method>
+		<method name="get_instance_node" qualifiers="const">
+			<return type="Node" />
+			<description>
+				Returns the attached [Node] (Activity/Dialog/Toast) if it is alive, or [code]null[/code] while still loading or after destruction.
+			</description>
+		</method>
+		<method name="get_intent" qualifiers="const">
+			<return type="Intent" />
+			<description>
+				Returns the [Intent] that produced this proxy.
+			</description>
+		</method>
+		<method name="get_scene_path" qualifiers="const">
+			<return type="String" />
+			<description>
+				Returns the scene path that was resolved from the Intent's action.
+			</description>
+		</method>
+		<method name="get_state" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns the current lifecycle state. See the [enum State] constants.
+			</description>
+		</method>
+		<method name="is_loading" qualifiers="const">
+			<return type="bool" />
+			<description>
+			</description>
+		</method>
+		<method name="is_pending" qualifiers="const">
+			<return type="bool" />
+			<description>
+			</description>
+		</method>
+		<method name="is_ready" qualifiers="const">
+			<return type="bool" />
+			<description>
+			</description>
+		</method>
+		<method name="is_terminal" qualifiers="const">
+			<return type="bool" />
+			<description>
+				True if the proxy is in [constant STATE_FAILED], [constant STATE_CANCELLED] or [constant STATE_FINISHED].
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="action" type="String" setter="" getter="get_action">
+		</member>
+		<member name="intent" type="Intent" setter="" getter="get_intent">
+		</member>
+		<member name="scene_path" type="String" setter="" getter="get_scene_path">
+		</member>
+		<member name="state" type="int" setter="" getter="get_state" enum="ContextProxy.State">
+		</member>
+	</members>
+	<signals>
+		<signal name="cancelled">
+			<description>
+				Emitted when the proxy was cancelled before reaching [constant STATE_READY].
+			</description>
+		</signal>
+		<signal name="failed">
+			<param index="0" name="reason" type="String" />
+			<description>
+				Emitted when the scene could not be loaded or instantiated. [param reason] is a human-readable description.
+			</description>
+		</signal>
+		<signal name="finished">
+			<description>
+				Emitted when a previously [constant STATE_READY] node has been destroyed via the normal lifecycle.
+			</description>
+		</signal>
+		<signal name="ready">
+			<param index="0" name="node" type="Node" />
+			<description>
+				Emitted when the underlying [Node] has been instantiated, parented and dispatched its create lifecycle.
+			</description>
+		</signal>
+	</signals>
+	<constants>
+		<constant name="STATE_PENDING" value="0" enum="State">
+			Created but the load has not started yet (e.g. a queued Toast).
+		</constant>
+		<constant name="STATE_LOADING" value="1" enum="State">
+			The scene is being loaded asynchronously.
+		</constant>
+		<constant name="STATE_READY" value="2" enum="State">
+			The node has been instantiated, parented and dispatched its create lifecycle.
+		</constant>
+		<constant name="STATE_FAILED" value="3" enum="State">
+			Loading or instantiation failed.
+		</constant>
+		<constant name="STATE_CANCELLED" value="4" enum="State">
+			The proxy was cancelled before reaching READY.
+		</constant>
+		<constant name="STATE_FINISHED" value="5" enum="State">
+			The previously-READY node was destroyed via the normal lifecycle.
+		</constant>
+	</constants>
+</class>

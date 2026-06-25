@@ -758,3 +758,77 @@ Activity : Control
 - 构建脚本:`SCsub`(通配 `*.cpp` + 各子目录,根目录 `*.cpp` 自动纳入 context/application)、`config.py`。
 - 异步轮询:`ResourceManager::_ensure_polling` 连接 `SceneTree::process_frame`。
 - 转场:`Transition::play_enter/exit` 用 `Control::create_tween`;FADE/SCALE 改 modulate/scale(anchor-safe),SLIDE 改 position(ActivityManager 把 Activity 放在 (0,0)+显式 size)。
+
+## 8. ContextProxy 异步入栈（feature/game_framework 阶段 N）
+
+**动机**：之前 `ActivityManager::start_activity` 完全同步——`ResourceLoader::load(scene_path)` 阻塞主线程到拿到 `PackedScene` 才 push。希望主线程不卡，同时栈/flag 匹配语义在加载期间仍正确。
+
+**核心变更**：
+- 新增 `ContextProxy : RefCounted`（`ui/context_proxy.{h,cpp}`，`GDREGISTER_ABSTRACT_CLASS`）：6 态状态机 `PENDING/LOADING/READY/FAILED/CANCELLED/FINISHED`、`intent/scene_path/app/owner_id/instance_id`、信号 `ready(node)/failed(reason)/cancelled()/finished()`、`cancel()` 标记法。
+- 三个具体 proxy（同样在 `ui/`）：`ActivityProxy`（带 `no_history` 镜像 + `pending_new_intent`——LOADING 期间收到 SINGLE_TOP/CLEAR_TOP 时缓存到 READY 再 `dispatch_new_intent`）/ `DialogProxy` / `ToastProxy`。
+- `ActivityManager` 集合类型迁移：`Vector<Activity*>` → `Vector<Ref<ActivityProxy>>`，dialogs/toast_queue/active_toast_panels 同理。立即可见的 proxy 让 flag 比对 (`SINGLE_TOP`/`CLEAR_TOP`/`REORDER_TO_FRONT`/`NEW_CLEAR`) 在节点尚未实例化时即可工作。
+- `start_activity` 重写为三段：(a) 在 proxy 上做 flag 预处理（LOADING 命中 SINGLE_TOP → `set_pending_new_intent`），(b) 同步 push 新 proxy + **立即 `dispatch_pause` 旧 top**（不改 `visible`，保留渲染），(c) `_begin_activity_load`。`Dialog` 走同样三段。
+- `_begin_activity_load` / `_begin_dialog_load`：FLAG_LOAD_SYNC 或 `!OS::has_feature("threads")` → `ResourceLoader::load` + 立即 `_attach`；否则 `ResourceLoader::load_threaded_request` + 入 `Vector<LoadingTask> loading`，`_ensure_polling` 把 `SceneTree::process_frame` 连到 `_poll_loads`。
+- `_attach_activity`：节点 READY 后再 `set_visible(false)` 旧 top；honour `pending_new_intent`；emit `ready`。
+- 取消语义：`finish_top` / `back` / `cleanup_all` / `_dismiss_owned_dialogs` / `_cancel_owned_toasts` 都识别 LOADING/PENDING——cancel 不调 destroy 生命周期。`FLAG_NEW_CLEAR` 在 LOADING proxies 上批量 cancel。
+- `Intent` 新增 `FLAG_LOAD_SYNC = 1 << 5`：显式回退到同步路径。
+- API 返回值：`start_activity`/`start_activity_with`/`show_dialog`/`show_toast`（以及 ContextBase 模板和 Context/Activity/Dialog 的 PMF bindings）现在分别返回 `Ref<ActivityProxy>`/`Ref<DialogProxy>`/`Ref<ToastProxy>`；旧不取返回值的调用点零回归。
+- 新增 GDScript 可见 API：`ActivityManager.get_current_activity_proxy()` / `get_stack_proxy(idx)` / `get_dialog_proxy(idx)` / `get_toast_queue_proxy(idx)`。
+
+**迁移要点**：
+- `ActivityManager.get_current_activity()` 在 LOADING 期间会返回 `null`——既有断言改用 `get_current_activity_proxy().get_action()` 或先 `await proxy.ready`。
+- 老 demo 期望 push 后立刻见到节点 → 加 `FLAG_LOAD_SYNC`（行为 100% 等价旧路径）。
+- standalone bootstrap (`adopt_running_*`) 保持兼容：返回值新增 `Ref<*Proxy>`，老的 `am->adopt_running_*(this, ...)` 调用点不取返回值。
+
+**测试**：
+- C++ 单元/集成 22 条 `[GameFramework]` 用例（`modules/game_framework/tests/`，97 断言）：proxy 状态机、`cancel()` 守卫、`FLAG_LOAD_SYNC` 值锁定、LOADING proxy flag 匹配、`adopt_running_activity` → READY、missing scene → FAILED + rollback、`FLAG_NEW_CLEAR` mass drain、`clear_toasts_by_owner` 取消 PENDING、SERIAL 队列 first READY/rest PENDING、`cleanup_all` finished/cancelled emit、**FAILED rollback 恢复原 pause_owner（review BUG 1 / RISK 3）**、**public `cancel()` 状态转换 + 幂等（review BUG 2）**、**`_mark_adopted_ready` 翻 LOADING → READY+RESUMED（review RISK 2）**。
+- GDScript headless：`plinko_game/verify_proxy.gd`（"=== ALL ASSERTIONS PASSED ==="）。
+
+**Review 回归修复（review subagent `sa_20260624_165046_000000000_9c31fc8781da`）**：
+- **BUG 1** — `_attach_activity` 的 cast-failure 分支以前从不 resume 被暂停的 old top → 抽出 `rollback` lambda，两个 FAILED 分支共用同一恢复路径，按 `pause_owner_id` 决定要 resume 谁。
+- **BUG 2** — public `ContextProxy::cancel()` 仅设状态、不通知 manager → 现在 emit `cancelled` 信号；`ActivityManager` 在每次 `proxy.instantiate()` 后 `connect` 到 `_on_proxy_cancelled`，handler 扫描 stack/dialogs/toast_queue drain CANCELLED proxies（管理器侧的 cancel 路径保持"先 remove 再 emit"，扫描时找不到，幂等）。
+- **BUG 3** — 重叠 `start_activity` 时 B 的 attach 错误 resume → 引入 `ActivityProxy::lifecycle_stage`（NONE/STARTED/RESUMED/PAUSED/STOPPED/DESTROYED）；`_attach_activity` 检查 `is_top`，非顶层只 create+start + `set_visible(false)`，不 resume；新顶层 attach 时通过 `_transition_to_stopped_hidden(prev)` 安全 pause→stop。
+- **RISK 1** — `cleanup_all` 漏 ResourceLoader 槽 → 现在对 in-flight `loading` 任务调用 `ResourceLoader::load_threaded_get(path)` 退还槽位再清空。
+- **RISK 2** — `adopt_running_*` 提前 emit READY → 现在置 STATE_LOADING；Activity/Dialog 的 `_dispatch_standalone_lifecycle` 在 deferred 帧调度完 create/start/resume 后调 `am->_mark_adopted_ready(this)` 翻 READY+RESUMED 并 emit。
+- **RISK 3** — sync FAILED 只 resume 当前 top → 通过 `pause_owner_id` 精确还原；`_resume_pause_owner_if_top` 仅在 pause owner 现在仍是 top 时 resume。
+- **RISK 4** — resume-without-start → 4 个 lifecycle 转移辅助 `_transition_to_paused/_transition_to_stopped_hidden/_transition_to_resumed/_transition_to_destroyed`，每个按 `lifecycle_stage` switch 分支决定要派发哪些 dispatch_*，绝不在错误阶段调用。保留"stopped → resume 不重 dispatch_start"约定。
+- NIT — 多余的 `is_terminal() || == STATE_CANCELLED` 简化为 `is_terminal()`；poll 循环加 unknown-subclass else 分支显式 emit FAILED；Toast PARALLEL 不再 double-set READY；文档注明 Toast 永不进入 LOADING。
+
+## 9. 当前文件布局（2026-06-25 重组后）
+
+```
+modules/game_framework/
+  PROGRESS.md  SCsub  config.py
+  register_types.{cpp,h}                  ← 模块入口（唯一根级 cpp）
+  context/                                ← Context 层
+    application.{h,cpp}
+    context.{h,cpp}
+    context_base.{h,inl}
+    context_interface.h
+    standalone_application.{h,cpp}
+  editor/                                 ← TOOLS_ENABLED 扩展
+    editor_bind_plugin.{h,cpp}            ← 全文件包 #ifdef TOOLS_ENABLED
+  ui/                                     ← 安卓风格 UI 栈
+    activity.{h,cpp}      activity_loader.{h,cpp}
+    activity_manager.{h,cpp}              auto_activity_loader.{h,cpp}
+    dialog.{h,cpp}        intent.{h,cpp}
+    scene_service.{h,cpp} toast.{h,cpp}   transition.{h,cpp}
+    proxy/                                ← ContextProxy 4 个子类
+      context_proxy.{h,cpp}
+      activity_proxy.{h,cpp}
+      dialog_proxy.{h,cpp}
+      toast_proxy.{h,cpp}
+  service/  resource/  mvvm/               ← 其余子系统未动
+  doc_classes/                            ← ClassDB 文档
+  tests/                                  ← C++ doctest（保持平铺）
+```
+
+**include 路径约定**：
+- `context/` 内部互相 include 用裸文件名（同目录）。
+- `context/` 引用 `ui/` / `resource/` / `service/` / `mvvm/`：`#include "../ui/..."` 等。
+- `ui/` 引用 `context/`：`#include "../context/application.h"` 等。
+- `ui/proxy/` 引用同级 ui 文件：`#include "../activity.h"`；引用 `context/`：`#include "../../context/application.h"`。
+- 模块根 `register_types.cpp` 引用：`#include "context/application.h"` / `#include "editor/editor_bind_plugin.h"` / `#include "ui/proxy/activity_proxy.h"`。
+- 测试 `tests/test_*.h` 引用：`#include "../context/application.h"` / `#include "../ui/proxy/<name>.h"`。
+
+模块根的"杂物间"已清空,根级只剩 `register_types.{cpp,h}` 和模块元文件(SCsub / config.py / PROGRESS.md)。

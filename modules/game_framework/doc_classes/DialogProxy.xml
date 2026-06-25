@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="DialogProxy" inherits="ContextProxy" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		ContextProxy entry held by ActivityManager's dialog list.
+	</brief_description>
+	<description>
+		Created by [method Context.show_dialog]. Tracks the dialog's load and attachment; [signal ContextProxy.ready] fires when the dialog has been instantiated and its [code]_on_create[/code] dispatched.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_dialog" qualifiers="const">
+			<return type="Dialog" />
+			<description>
+				Returns the attached [Dialog], or [code]null[/code] while loading.
+			</description>
+		</method>
+	</methods>
+</class>

@@ -3,14 +3,16 @@
 /**************************************************************************/
 
 #include "dialog.h"
-#include "../context_base.inl"
+#include "../context/context_base.inl"
 
-#include "../application.h"
-#include "../context.h"
-#include "../standalone_application.h"
+#include "../context/application.h"
+#include "../context/context.h"
+#include "../context/standalone_application.h"
 #include "activity_manager.h"
+#include "proxy/activity_proxy.h"
 #include "auto_activity_loader.h"
-#include "standalone_activity_launcher.h"
+#include "proxy/dialog_proxy.h"
+#include "proxy/toast_proxy.h"
 
 #include "core/config/engine.h"
 #include "core/io/resource.h"
@@ -19,9 +21,6 @@
 #include "scene/main/window.h"
 
 Dialog::Dialog() {
-	// Default launcher: enables the "F6 single-Dialog preview" path out of the box.
-	// Users can disable by calling set_launcher(null) or swap to a different strategy.
-	launcher = Ref<ActivityLauncher>(memnew(StandaloneActivityLauncher));
 }
 
 void Dialog::set_intent(const Ref<Intent> &p_intent) {
@@ -88,16 +87,6 @@ Context *Dialog::get_context() const {
 	return _app; // Application IS-A Context, implicit upcast.
 }
 
-// ---- Launcher (Run-As-Standalone) ----
-
-void Dialog::set_launcher(const Ref<ActivityLauncher> &p_launcher) {
-	launcher = p_launcher;
-}
-
-Ref<ActivityLauncher> Dialog::get_launcher() const {
-	return launcher;
-}
-
 bool Dialog::is_standalone() const {
 	return Object::cast_to<StandaloneApplication>(_app) != nullptr;
 }
@@ -106,9 +95,11 @@ void Dialog::_notification(int p_what) {
 	if (p_what != NOTIFICATION_READY) {
 		return;
 	}
-	if (launcher.is_valid()) {
-		launcher->try_launch(this);
-	}
+	// Defer: run_standalone_bootstrap reparents/builds nodes, which must not
+	// happen during the READY pass ("parent is busy setting up children").
+	// The bootstrap self-guards (no-op when an Application is already bound,
+	// e.g. the managed flow where ActivityManager injects it before add_child).
+	call_deferred(SNAME("run_standalone_bootstrap"), false);
 }
 
 // ============================================================
@@ -118,7 +109,7 @@ void Dialog::_notification(int p_what) {
 // Uses the shared StandaloneApplication::host() to build the host environment,
 // then adopts itself as a running dialog and dispatches _on_create. Guard is the
 // user's model: only self-host when no Application is bound (not the managed
-// flow) and not in the editor. Safe to call directly or via a launcher.
+// flow) and not in the editor. Safe to call directly from tests or scripts.
 
 void Dialog::run_standalone_bootstrap(bool p_play_transitions) {
 	if (_app != nullptr) {
@@ -161,6 +152,12 @@ void Dialog::_dispatch_standalone_lifecycle(bool p_play_transitions) {
 	if (p_play_transitions && transition_in.is_valid()) {
 		transition_in->play_enter(this);
 	}
+	if (_app) {
+		ActivityManager *am = _app->get_activity_manager();
+		if (am) {
+			am->_mark_adopted_ready(this);
+		}
+	}
 }
 
 void Dialog::_bind_methods() {
@@ -180,14 +177,12 @@ void Dialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_context"), &Dialog::get_context);
 	ClassDB::bind_method(D_METHOD("get_application"), &Dialog::get_application);
 
-	ClassDB::bind_method(D_METHOD("set_launcher", "launcher"), &Dialog::set_launcher);
-	ClassDB::bind_method(D_METHOD("get_launcher"), &Dialog::get_launcher);
 	ClassDB::bind_method(D_METHOD("is_standalone"), &Dialog::is_standalone);
 	ClassDB::bind_method(D_METHOD("run_standalone_bootstrap", "play_transitions"), &Dialog::run_standalone_bootstrap, DEFVAL(false));
 	ClassDB::bind_method(D_METHOD("_dispatch_standalone_lifecycle", "play_transitions"), &Dialog::_dispatch_standalone_lifecycle);
 
 	// ---- Generic delegates (inherited from ContextBase<Dialog>) ----
-	using ShowToastT = void (Dialog::*)(Toast *);
+	using ShowToastT = Ref<ToastProxy> (Dialog::*)(Toast *);
 	ShowToastT show_toast_pmf = static_cast<ShowToastT>(&Dialog::show_toast);
 	ClassDB::bind_method(D_METHOD("show_toast", "toast"), show_toast_pmf);
 
@@ -213,9 +208,6 @@ void Dialog::_bind_methods() {
 
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "transition_in", PROPERTY_HINT_RESOURCE_TYPE, "Transition"), "set_transition_in", "get_transition_in");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "transition_out", PROPERTY_HINT_RESOURCE_TYPE, "Transition"), "set_transition_out", "get_transition_out");
-
-	ADD_GROUP("Standalone", "");
-	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "launcher", PROPERTY_HINT_RESOURCE_TYPE, "ActivityLauncher"), "set_launcher", "get_launcher");
 
 	GDVIRTUAL_BIND(_on_create, "saved_state");
 	GDVIRTUAL_BIND(_on_dismiss);

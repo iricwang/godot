@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="ActivityProxy" inherits="ContextProxy" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		ContextProxy entry held by ActivityManager's back-stack.
+	</brief_description>
+	<description>
+		Created by [method Context.start_activity] and pushed into the stack synchronously. While the activity scene is still loading, the proxy is the only thing in the stack — [method get_activity] returns [code]null[/code] until [signal ContextProxy.ready] fires.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_activity" qualifiers="const">
+			<return type="Activity" />
+			<description>
+				Returns the attached [Activity], or [code]null[/code] while loading.
+			</description>
+		</method>
+		<method name="get_no_history" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Mirrors [code]Intent.FLAG_NO_HISTORY[/code] captured at push time.
+			</description>
+		</method>
+		<method name="has_pending_new_intent" qualifiers="const">
+			<return type="bool" />
+			<description>
+				True if a SINGLE_TOP/CLEAR_TOP retarget arrived while this proxy was still LOADING. ActivityManager applies it once the activity is READY.
+			</description>
+		</method>
+	</methods>
+</class>

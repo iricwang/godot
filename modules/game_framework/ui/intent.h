@@ -19,6 +19,7 @@ public:
 		FLAG_NO_HISTORY = 1 << 2, // the new activity is left out of the back stack — finished when navigated away from
 		FLAG_REORDER_TO_FRONT = 1 << 3, // if the activity exists in the stack, bring it to the top without destroying anything
 		FLAG_NEW_CLEAR = 1 << 4, // clear the entire back stack (and all dialogs) before starting this activity
+		FLAG_LOAD_SYNC = 1 << 5, // force the synchronous code path (skip async ResourceLoader thread + per-frame poll)
 	};
 
 private:

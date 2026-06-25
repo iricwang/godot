@@ -3,11 +3,10 @@
 /**************************************************************************/
 #pragma once
 
-#include "../context_base.h"
+#include "../context/context_base.h"
 
 #include "scene/gui/control.h"
 
-#include "activity_launcher.h"
 #include "intent.h"
 #include "transition.h"
 
@@ -25,8 +24,10 @@ class Application;
 // Toast and overrides _on_create — exactly like Dialog.
 //
 // Toast is a C++ "is-a IContext" via ContextBase<Toast> — it carries an
-// Application* and exposes the full Context-style API. Like Activity / Dialog it
-// can self-host for preview (F6) through its `launcher`.
+// Application* and exposes the full Context-style API. Like Activity / Dialog,
+// on NOTIFICATION_READY it defers run_standalone_bootstrap so a *_toast.tscn
+// can self-host for preview (F6). The bootstrap self-guards against the
+// managed flow (Application already bound) and the editor.
 //
 // An optional lifecycle_owner binds the Toast to a Context; when the owning
 // Activity is destroyed, ActivityManager cancels the owner's toasts.
@@ -38,7 +39,6 @@ class Toast : public Control, public ContextBase<Toast> {
 	Ref<Intent> intent;
 	Ref<Transition> transition_in;
 	Ref<Transition> transition_out;
-	Ref<ActivityLauncher> launcher;
 	Application *_app = nullptr;
 	Object *lifecycle_owner = nullptr; // owning Context; 0 = global. Named to avoid Node::set_owner clash.
 	ObjectID owner_id; // cached id of lifecycle_owner for fast queue filtering
@@ -91,9 +91,6 @@ public:
 	Application *get_application() const override { return _app; }
 	Object *as_object() override { return this; }
 
-	// ---- Launcher (Run-As-Standalone) ----
-	void set_launcher(const Ref<ActivityLauncher> &p_launcher);
-	Ref<ActivityLauncher> get_launcher() const;
 	bool is_standalone() const;
 	void run_standalone_bootstrap(bool p_play_transitions = false);
 

@@ -12,7 +12,7 @@
 
 		[b]Implementation note.[/b] Dialog is a C++ [code]IContext[/code] via the [code]ContextBase<Dialog>[/code] CRTP mixin — at the C++ level, it [i]is[/i] a Context. The convenience methods (show_toast / get_service / load_resource_*) are inherited, not duplicated. GDScript binding names are 100% backward compatible. See [Context] for the rationale and limitations on GDScript-level type checks.
 
-		[b]Run-As-Standalone (Strategy).[/b] Like [Activity], a Dialog scene opened directly in the editor (F6 / "Play Scene") without an [ActivityManager] hosting it is self-hosted by its [member launcher]. The default [StandaloneActivityLauncher] checks whether an [Application] is already bound: if it is, the Dialog was opened the normal way (via [method Context.show_dialog]) and the launcher does nothing; if it is [b]not[/b], the Dialog is a standalone preview context, so the launcher spawns a minimal [Application] + [code]StandaloneRoot[/code] under [SceneTree.root], reparents the Dialog, and dispatches [method _on_create] — letting a [code]*_dialog.tscn[/code] be previewed in isolation. Override [method _on_setup_standalone] to register mock services first. To disable, set [code]launcher = null[/code]. Closing a standalone-root Dialog ([method dismiss]) quits the SceneTree.
+		[b]Run-As-Standalone.[/b] Like [Activity], a Dialog scene opened directly in the editor (F6 / "Play Scene") without an [ActivityManager] hosting it auto-bootstraps on [code]NOTIFICATION_READY[/code] via [method run_standalone_bootstrap]. The bootstrap self-guards: it is a no-op if an [Application] is already bound (the normal [method Context.show_dialog] flow injects one before add_child) or if running inside the editor. Otherwise it spawns a minimal [Application] + [code]StandaloneRoot[/code] under [SceneTree.root], reparents the Dialog, and dispatches [method _on_create] — letting a [code]*_dialog.tscn[/code] be previewed in isolation. Override [method _on_setup_standalone] to register mock services first. Closing a standalone-root Dialog ([method dismiss]) quits the SceneTree.
 	</description>
 	<tutorials>
 	</tutorials>
@@ -114,7 +114,7 @@
 			<return type="void" />
 			<param index="0" name="play_transitions" type="bool" default="false" />
 			<description>
-				Builds the standalone host ([Application] + [code]StandaloneRoot[/code]), reparents this Dialog under it, registers it as a running dialog, and dispatches [method _on_create]. Normally invoked by [member launcher] via [code]call_deferred[/code]; exposed publicly so custom launchers or tests can drive the preview directly. Assumes no [Application] is bound yet. When [param play_transitions] is [code]true[/code], [member transition_in] plays on entry.
+				Builds the standalone host ([Application] + [code]StandaloneRoot[/code]), reparents this Dialog under it, registers it as a running dialog, and dispatches [method _on_create]. Normally invoked from [code]_notification(NOTIFICATION_READY)[/code] via [code]call_deferred[/code]; exposed publicly so tests can drive the preview directly. Assumes no [Application] is bound yet. When [param play_transitions] is [code]true[/code], [member transition_in] plays on entry.
 			</description>
 		</method>
 		<method name="show_toast">
@@ -126,9 +126,6 @@
 		</method>
 	</methods>
 	<members>
-		<member name="launcher" type="ActivityLauncher" setter="set_launcher" getter="get_launcher">
-			The startup strategy invoked on [code]NOTIFICATION_READY[/code]. Default = [StandaloneActivityLauncher] (enables the F6 single-Dialog preview workflow). Set to [code]null[/code] to disable any auto-launch, or assign a custom subclass.
-		</member>
 		<member name="transition_in" type="Transition" setter="set_transition_in" getter="get_transition_in">
 			The [Transition] resource for entering the screen.
 		</member>

@@ -4,7 +4,7 @@
 
 #include "scene_service.h"
 
-#include "../application.h"
+#include "../context/application.h"
 #include "activity_manager.h"
 
 #include "core/io/resource_loader.h"

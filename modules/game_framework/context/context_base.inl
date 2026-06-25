@@ -6,12 +6,15 @@
 #include "context_base.h"
 
 #include "application.h"
-#include "resource/resource_handle.h"
-#include "resource/resource_manager.h"
-#include "service/service_registry.h"
-#include "ui/activity_manager.h"
-#include "ui/intent.h"
-#include "ui/toast.h"
+#include "../resource/resource_handle.h"
+#include "../resource/resource_manager.h"
+#include "../service/service_registry.h"
+#include "../ui/activity_manager.h"
+#include "../ui/proxy/activity_proxy.h"
+#include "../ui/proxy/dialog_proxy.h"
+#include "../ui/intent.h"
+#include "../ui/toast.h"
+#include "../ui/proxy/toast_proxy.h"
 
 template <typename Self>
 Object *ContextBase<Self>::get_service(const StringName &p_name) const {
@@ -49,15 +52,15 @@ void ContextBase<Self>::load_resource_async(const String &p_path, const Callable
 }
 
 template <typename Self>
-void ContextBase<Self>::start_activity(const Ref<Intent> &p_intent) {
+Ref<ActivityProxy> ContextBase<Self>::start_activity(const Ref<Intent> &p_intent) {
 	Application *app = _ctx_app();
-	ERR_FAIL_NULL(app);
-	app->get_activity_manager()->start_activity(p_intent);
+	ERR_FAIL_NULL_V(app, Ref<ActivityProxy>());
+	return app->get_activity_manager()->start_activity(p_intent);
 }
 
 template <typename Self>
-void ContextBase<Self>::start_activity_with(const String &p_action, int p_flags, const Dictionary &p_extras) {
-	start_activity(Intent::create(p_action, p_flags, p_extras));
+Ref<ActivityProxy> ContextBase<Self>::start_activity_with(const String &p_action, int p_flags, const Dictionary &p_extras) {
+	return start_activity(Intent::create(p_action, p_flags, p_extras));
 }
 
 template <typename Self>
@@ -75,15 +78,15 @@ bool ContextBase<Self>::back() {
 }
 
 template <typename Self>
-void ContextBase<Self>::show_dialog(const Ref<Intent> &p_intent) {
+Ref<DialogProxy> ContextBase<Self>::show_dialog(const Ref<Intent> &p_intent) {
 	Application *app = _ctx_app();
-	ERR_FAIL_NULL(app);
-	app->get_activity_manager()->show_dialog_with_owner(p_intent, static_cast<Self *>(this)->as_object());
+	ERR_FAIL_NULL_V(app, Ref<DialogProxy>());
+	return app->get_activity_manager()->show_dialog_with_owner(p_intent, static_cast<Self *>(this)->as_object());
 }
 
 template <typename Self>
-void ContextBase<Self>::show_toast(Toast *p_toast) {
+Ref<ToastProxy> ContextBase<Self>::show_toast(Toast *p_toast) {
 	Application *app = _ctx_app();
-	ERR_FAIL_NULL(app);
-	app->get_activity_manager()->show_toast_with_owner(p_toast, static_cast<Self *>(this)->as_object());
+	ERR_FAIL_NULL_V(app, Ref<ToastProxy>());
+	return app->get_activity_manager()->show_toast_with_owner(p_toast, static_cast<Self *>(this)->as_object());
 }

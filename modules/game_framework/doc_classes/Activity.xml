@@ -17,15 +17,12 @@
 
 		[b]Implementation note.[/b] Activity is a C++ [code]IContext[/code] via the [code]ContextBase<Activity>[/code] CRTP mixin — at the C++ level, it [i]is[/i] a Context. The convenience methods (start_activity / show_toast / get_service / load_resource_*) are inherited, not duplicated. GDScript binding names are 100% backward compatible. Internally Activity holds an [code]Application *[/code] rather than the abstract [code]Context *[/code]: [method get_context] returns this Application (upcast to Context, since Application IS-A Context), and the legacy [method set_context] is preserved as an alias that down-casts to Application.
 
-		[b]Run-As-Standalone (Strategy).[/b] When an Activity scene is opened directly in the editor (F6 / "Play Scene") without an [ActivityManager] hosting it, the Activity's [member launcher] decides whether to self-host. The default launcher is [StandaloneActivityLauncher], which spawns a minimal [Application] + [code]StandaloneRoot[/code] under [SceneTree.root], reparents the Activity, and drives the GDScript lifecycle. To disable the bootstrap, set [code]launcher = null[/code] or assign a custom launcher. Override [method _on_setup_standalone] to register mock services before [method _on_create] fires.
-
-		[b]Run-As-Standalone[/b]
-		When an Activity scene is opened directly (e.g. F6 / "Play Scene" in the editor, or [code]godot --path . &lt;activity&gt;.tscn[/code] on the command line) without an [ActivityManager] hosting it, the Activity bootstraps a minimal [Application] automatically:
+		[b]Run-As-Standalone.[/b] When an Activity scene is opened directly (e.g. F6 / "Play Scene" in the editor, or [code]godot --path . &lt;activity&gt;.tscn[/code] on the command line) without an [ActivityManager] hosting it, the Activity auto-bootstraps a minimal [StandaloneApplication] on [code]NOTIFICATION_READY[/code] via [method run_standalone_bootstrap]:
 		- A new [Application] node and a [code]StandaloneRoot[/code] full-screen Control are spawned under the scene tree root.
 		- The Activity is reparented under [code]StandaloneRoot[/code] so [Dialog] / [Toast] layering matches the managed path.
 		- It is added to the Activity stack (so [method back] / [method finish] work normally) and [code]finish()[/code] on the last standalone Activity calls [SceneTree.quit].
 		- [b]No[/b] services are pre-registered. Override [method _on_setup_standalone] to register mock services or pre-load data.
-		- To suppress the bootstrap, set [member launcher] to [code]null[/code], or swap to a custom [ActivityLauncher] subclass.
+		- Self-guards: no-op if an [Application] is already bound (normal ActivityManager flow injects it before add_child) or if running inside the editor.
 	</description>
 	<tutorials>
 	</tutorials>
@@ -211,9 +208,6 @@
 		</method>
 	</methods>
 	<members>
-		<member name="launcher" type="ActivityLauncher" setter="set_launcher" getter="get_launcher">
-			The startup strategy invoked on [code]NOTIFICATION_READY[/code]. Default = [StandaloneActivityLauncher] (enables the F6 single-Activity debug workflow). Set to [code]null[/code] to disable any auto-launch, or assign a custom subclass for editor-preview / nested-activity / multi-window setups.
-		</member>
 		<member name="no_history" type="bool" setter="set_no_history" getter="get_no_history" default="false">
 			If [code]true[/code], this Activity will be destroyed when a new Activity is started on top of it, instead of being paused and kept in the back stack.
 		</member>

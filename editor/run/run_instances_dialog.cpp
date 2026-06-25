@@ -33,7 +33,7 @@
 #include "core/config/project_settings.h"
 #include "core/object/callable_mp.h"
 #include "core/os/os.h"
-#include "editor/plugins/device_preview/device_preview_plugin.h"
+#include "editor/run/game_view_plugin.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/check_box.h"
@@ -294,12 +294,13 @@ void RunInstancesDialog::apply_custom_features(int p_instance_idx) {
 		}
 	}
 
-	// Merge in tags from the active device preview (e.g. "mobile" when a
-	// phone profile is selected in the 2D toolbar). This is the bridge
-	// that makes "run this game in the mobile branch" a single click in
-	// the device picker rather than a manual feature-tags entry.
-	if (DevicePreviewPlugin *dp = DevicePreviewPlugin::get_singleton()) {
-		const PackedStringArray active = dp->get_active_feature_tags();
+	// Merge in tags from the Game workspace's Platform selector (Auto /
+	// Mobile / PC / Web). This is the bridge that makes "run this game in
+	// the mobile branch" a single click in the toolbar rather than a
+	// manual feature-tags entry. Resolution selection is independent and
+	// does NOT inject tags.
+	if (GameView *gv = GameView::get_singleton()) {
+		const PackedStringArray active = gv->get_active_platform_tags();
 		for (const String &tag : active) {
 			const String trimmed = tag.strip_edges();
 			if (trimmed.is_empty() || stripped_features.has(trimmed)) {

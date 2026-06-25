@@ -38,6 +38,7 @@
 #include "scene/gui/box_container.h"
 
 class EmbeddedProcessBase;
+class OptionButton;
 class VSeparator;
 class WindowWrapper;
 class ScriptEditorDebugger;
@@ -194,6 +195,7 @@ class GameView : public VBoxContainer {
 	MenuButton *camera_override_menu = nullptr;
 
 	HBoxContainer *embedding_hb = nullptr;
+	OptionButton *platform_menu = nullptr;
 	MenuButton *preview_resolution_menu = nullptr;
 	Button *preview_orientation_button = nullptr;
 	MenuButton *game_window_options_menu = nullptr;
@@ -212,6 +214,23 @@ class GameView : public VBoxContainer {
 	Size2i preview_resolution;
 	String preview_resolution_device_name;
 	bool preview_resolution_landscape = false;
+
+	// Decoupled from the resolution selection: the user picks a platform
+	// explicitly here, and the runtime branch (`OS.has_feature("mobile")`
+	// / etc.) follows. AUTO injects nothing -- whatever the host platform
+	// reports natively. Keep enumerators stable; they are persisted via
+	// EditorSettings::project_metadata.
+	enum Platform {
+		PLATFORM_AUTO = 0,
+		PLATFORM_MOBILE = 1,
+		PLATFORM_PC = 2,
+		PLATFORM_WEB = 3,
+	};
+	Platform platform_selection = PLATFORM_AUTO;
+	// Tags currently injected into ProjectSettings::custom_features based
+	// on platform_selection. Tracked separately so we can cleanly remove
+	// them on switch / clear.
+	PackedStringArray injected_platform_tags;
 	bool hdr_output_enabled = false;
 	float current_max_luminance = 0.0f;
 	float current_reference_luminance = 0.0f;
@@ -268,6 +287,10 @@ class GameView : public VBoxContainer {
 	void _update_arguments_for_instance(int p_idx, List<String> &r_arguments);
 	void _show_update_window_wrapper();
 
+	void _on_platform_selected(int p_index);
+	void _apply_platform_selection(Platform p_platform);
+	PackedStringArray _platform_to_feature_tags(Platform p_platform) const;
+
 	void _hide_selection_toggled(bool p_pressed);
 
 	void _debug_mute_audio_button_pressed();
@@ -292,6 +315,14 @@ protected:
 	void _notification(int p_what);
 
 public:
+	static GameView *get_singleton() { return singleton; }
+
+	// Tags currently injected by the Platform selector in the Game
+	// workspace toolbar. Empty when PLATFORM_AUTO is active. Read by
+	// RunInstancesDialog::apply_custom_features so F5-launched child
+	// processes inherit the same branch via GODOT_EDITOR_CUSTOM_FEATURES.
+	PackedStringArray get_active_platform_tags() const { return injected_platform_tags; }
+
 	void set_state(const Dictionary &p_state);
 	Dictionary get_state() const;
 

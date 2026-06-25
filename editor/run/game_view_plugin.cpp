@@ -38,7 +38,6 @@
 #include "editor/debugger/editor_debugger_node.h"
 #include "editor/debugger/script_editor_debugger.h"
 #include "editor/plugins/device_preview/device_database.h"
-#include "editor/plugins/device_preview/device_preview_plugin.h"
 #include "editor/editor_interface.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
@@ -54,6 +53,7 @@
 #include "scene/gui/button.h"
 #include "scene/gui/label.h"
 #include "scene/gui/menu_button.h"
+#include "scene/gui/option_button.h"
 #include "scene/gui/panel.h"
 #include "scene/gui/separator.h"
 #include "scene/main/scene_tree.h"
@@ -788,21 +788,12 @@ void GameView::_preview_resolution_menu_id_pressed(int p_id) {
 		}
 	}
 
-	// Drive the shared mobile/pc feature-tag set through DevicePreviewPlugin
-	// so picking a phone in the Game workspace is equivalent to picking one
-	// in the 2D-toolbar device picker -- both will make
-	// `OS.has_feature("mobile")` report true at design time and at F5
-	// runtime. We deliberately do NOT call into _apply_preview, because the
-	// Game workspace already has its own embedded-window sizing path
-	// (handled by _update_embed_window_size below); only the feature-tag
-	// portion is shared.
-	if (DevicePreviewPlugin *dp = DevicePreviewPlugin::get_singleton()) {
-		if (selected_profile.is_valid()) {
-			dp->set_active_feature_tags(selected_profile->get_effective_feature_tags());
-		} else {
-			dp->clear_active_feature_tags();
-		}
-	}
+	// NOTE: The resolution selection used to also drive the mobile/pc
+	// feature-tag injection (picking iPhone implied "mobile"). That bridge
+	// is gone -- platform is now an explicit, separate dropdown
+	// (platform_menu) right next to this one, so the user can mix a phone
+	// resolution with the PC branch (or vice versa) if they want to. See
+	// `_on_platform_selected` for the actual injection path.
 
 	EditorSettings::get_singleton()->set_project_metadata("game_view", "preview_resolution_device", preview_resolution_device_name);
 	_build_preview_resolution_menu();
@@ -815,6 +806,52 @@ void GameView::_preview_resolution_menu_id_pressed(int p_id) {
 	if (embedded_process) {
 		embedded_process->queue_update_embedded_process();
 	}
+}
+
+PackedStringArray GameView::_platform_to_feature_tags(Platform p_platform) const {
+	PackedStringArray tags;
+	switch (p_platform) {
+		case PLATFORM_MOBILE:
+			tags.push_back("mobile");
+			break;
+		case PLATFORM_PC:
+			tags.push_back("pc");
+			break;
+		case PLATFORM_WEB:
+			tags.push_back("web");
+			break;
+		case PLATFORM_AUTO:
+			// Fall through -- no override.
+			break;
+	}
+	return tags;
+}
+
+void GameView::_apply_platform_selection(Platform p_platform) {
+	// Clear whatever we previously injected, then push the new set. This
+	// is the single source of truth for the engine-feature branch.
+	ProjectSettings *ps = ProjectSettings::get_singleton();
+	for (const String &tag : injected_platform_tags) {
+		ps->remove_custom_feature(tag);
+	}
+	injected_platform_tags.clear();
+
+	platform_selection = p_platform;
+	const PackedStringArray new_tags = _platform_to_feature_tags(p_platform);
+	for (const String &tag : new_tags) {
+		ps->add_custom_feature(tag);
+		injected_platform_tags.push_back(tag);
+	}
+}
+
+void GameView::_on_platform_selected(int p_index) {
+	const int id = platform_menu->get_item_id(p_index);
+	Platform p = PLATFORM_AUTO;
+	if (id >= PLATFORM_AUTO && id <= PLATFORM_WEB) {
+		p = (Platform)id;
+	}
+	_apply_platform_selection(p);
+	EditorSettings::get_singleton()->set_project_metadata("game_view", "platform", (int)p);
 }
 
 void GameView::_preview_orientation_toggled(bool p_pressed) {
@@ -850,22 +887,13 @@ void GameView::_build_preview_resolution_menu() {
 }
 
 void GameView::_update_preview_resolution_menu_label() {
-	// Feature tags currently injected by the 2D-toolbar device picker.
-	// We surface them here too so the developer can confirm the active
-	// branch from the Game workspace without flipping back to 2D.
-	PackedStringArray active_tags;
-	if (DevicePreviewPlugin *dp = DevicePreviewPlugin::get_singleton()) {
-		active_tags = dp->get_active_feature_tags();
-	}
-	const String tag_hint = active_tags.is_empty() ? String() : " [" + String(",").join(active_tags) + "]";
-
 	if (preview_resolution_device_name.is_empty()) {
-		preview_resolution_menu->set_text(String(TTRC("Project")) + tag_hint);
-		preview_resolution_menu->set_tooltip_text(TTRC("Use the project window size for the embedded game preview.\nFeature tags shown in brackets reflect the 2D toolbar's device picker."));
+		preview_resolution_menu->set_text(TTRC("Project"));
+		preview_resolution_menu->set_tooltip_text(TTRC("Use the project window size for the embedded game preview."));
 	} else {
 		Size2i oriented_resolution = _apply_preview_orientation(preview_resolution);
-		preview_resolution_menu->set_text(preview_resolution_device_name + tag_hint);
-		preview_resolution_menu->set_tooltip_text(vformat(TTR("Preview Resolution: %s (%d×%d)\nFeature tags shown in brackets reflect the 2D toolbar's device picker."), preview_resolution_device_name, oriented_resolution.x, oriented_resolution.y));
+		preview_resolution_menu->set_text(preview_resolution_device_name);
+		preview_resolution_menu->set_tooltip_text(vformat(TTR("Preview Resolution: %s (%d×%d)"), preview_resolution_device_name, oriented_resolution.x, oriented_resolution.y));
 	}
 }
 
@@ -1769,6 +1797,39 @@ GameView::GameView(Ref<GameViewDebugger> p_debugger, EmbeddedProcessBase *p_embe
 		}
 	}
 
+	// --- Platform selector ---------------------------------------------
+	// Sits to the LEFT of the resolution picker because platform is the
+	// more abstract / categorical choice: it controls which engine-feature
+	// branch (`OS.has_feature("mobile")`, etc.) the game runs in, both at
+	// edit-time inside the editor process and at F5 child runtime via
+	// GODOT_EDITOR_CUSTOM_FEATURES (see RunInstancesDialog::apply_custom_features).
+	// Resolution and platform are now intentionally decoupled: you can
+	// e.g. preview at iPhone resolution while staying on the PC branch.
+	platform_menu = memnew(OptionButton);
+	embedding_hb->add_child(platform_menu);
+	platform_menu->set_flat(false);
+	platform_menu->set_theme_type_variation("FlatMenuButton");
+	platform_menu->set_h_size_flags(SIZE_SHRINK_END);
+	platform_menu->set_fit_to_longest_item(false);
+	platform_menu->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
+	platform_menu->set_accessibility_name(TTRC("Platform"));
+	platform_menu->add_item(TTRC("Auto"), PLATFORM_AUTO);
+	platform_menu->add_item(TTRC("Mobile"), PLATFORM_MOBILE);
+	platform_menu->add_item(TTRC("PC"), PLATFORM_PC);
+	platform_menu->add_item(TTRC("Web"), PLATFORM_WEB);
+	platform_menu->connect(SceneStringName(item_selected), callable_mp(this, &GameView::_on_platform_selected));
+	// Restore persisted selection (default AUTO). Apply immediately so the
+	// editor and the next F5 launch agree on the active branch.
+	{
+		const int persisted = (int)EditorSettings::get_singleton()->get_project_metadata("game_view", "platform", (int)PLATFORM_AUTO);
+		Platform restored = PLATFORM_AUTO;
+		if (persisted >= PLATFORM_AUTO && persisted <= PLATFORM_WEB) {
+			restored = (Platform)persisted;
+		}
+		platform_menu->select(platform_menu->get_item_index(restored));
+		_apply_platform_selection(restored);
+	}
+
 	preview_resolution_menu = memnew(MenuButton);
 	embedding_hb->add_child(preview_resolution_menu);
 	preview_resolution_menu->set_flat(false);
@@ -1778,14 +1839,6 @@ GameView::GameView(Ref<GameViewDebugger> p_debugger, EmbeddedProcessBase *p_embe
 	preview_resolution_menu->get_popup()->connect(SceneStringName(id_pressed), callable_mp(this, &GameView::_preview_resolution_menu_id_pressed));
 	_build_preview_resolution_menu();
 	_update_preview_resolution_menu_label();
-
-	// Keep the [mobile]/[pc] hint live as the 2D-toolbar device picker
-	// switches branches. The signal is bound on DevicePreviewPlugin in its
-	// _bind_methods, and the plugin singleton exists for the lifetime of
-	// the editor session, so an unbounded connection is fine here.
-	if (DevicePreviewPlugin *dp = DevicePreviewPlugin::get_singleton()) {
-		dp->connect("active_feature_tags_changed", callable_mp(this, &GameView::_update_preview_resolution_menu_label));
-	}
 
 	preview_orientation_button = memnew(Button);
 	embedding_hb->add_child(preview_orientation_button);

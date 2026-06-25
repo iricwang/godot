@@ -39,12 +39,9 @@
 #include "core/templates/hash_map.h"
 #include "core/templates/vector.h"
 #include "core/variant/callable.h"
-#include "core/variant/typed_array.h"
 #include "ei_action.h"
 #include "ei_enums.h"
-#include "ei_input_event_sampler.h"
 #include "ei_mapping_context.h"
-#include "ei_modifier.h"
 #include "ei_trigger.h"
 #include "ei_value.h"
 #include "scene/main/node.h"
@@ -286,6 +283,13 @@ private:
 	// Cancel all in-progress triggers and reset held actions to zero.
 	// Called on application focus loss (spec §6.0).
 	void _cancel_all_held();
+
+	// Push the current is_held state of every chord action into the
+	// EITriggerChord resources found in any action's trigger chain. Called
+	// before trigger evaluation (both dispatch and tick) so chords see
+	// up-to-date membership state. Without this, chords never fire at
+	// runtime because nothing updates their active map.
+	void _refresh_chord_states();
 
 	// Get-or-create the ActionRuntime for an action. Used by the
 	// dispatch path. Returns a reference so callers can mutate in

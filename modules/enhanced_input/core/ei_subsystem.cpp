@@ -29,8 +29,10 @@
 
 #include "ei_subsystem.h"
 
+#include "ei_input_event_sampler.h"
 #include "core/object/class_db.h"
 #include "core/string/print_string.h"
+#include "triggers/ei_trigger_chord.h"
 
 namespace ei {
 
@@ -407,18 +409,27 @@ void EISubsystem::_fire_event(const Ref<EIAction> &p_action, ETriggerEvent p_eve
 		if (!cb.is_valid()) {
 			continue;
 		}
-		// Pass (action, event, value) to the Callable. Callbacks
-		// that take fewer args work too (Godot truncates).
+		// Call with (action, event, value), degrading to fewer args so
+		// 0/1/2-arg callbacks also work. Godot does NOT silently truncate
+		// extra args for GDScript methods: passing too many is a hard
+		// CALL_ERROR_TOO_MANY_ARGUMENTS and the body never runs. So we
+		// retry with a smaller argc until the callee accepts the count
+		// (or we hit a different error, e.g. a real exception inside it).
 		const Variant v_action = p_action;
 		const Variant v_event = static_cast<int64_t>(p_event);
 		const Variant v_value = p_value.to_variant();
 		const Variant *args[3] = { &v_action, &v_event, &v_value };
 		Variant ret;
 		Callable::CallError err;
-		cb.callp(args, 3, ret, err);
-		// Argument count mismatch is OK (CALL_ERROR_INVALID_ARGUMENT
-		// / CALL_ERROR_TOO_FEW_ARGUMENTS / TOO_MANY); other errors
-		// are logged at verbose level only.
+		for (int argc = 3; argc >= 0; argc--) {
+			cb.callp(args, argc, ret, err);
+			if (err.error != Callable::CallError::CALL_ERROR_TOO_MANY_ARGUMENTS) {
+				break;
+			}
+		}
+		// TOO_FEW / INVALID_ARGUMENT can still happen for genuinely
+		// mismatched callbacks; those are tolerated. Other errors are
+		// logged at verbose level only.
 		if (err.error != Callable::CallError::CALL_OK &&
 				err.error != Callable::CallError::CALL_ERROR_INVALID_METHOD &&
 				err.error != Callable::CallError::CALL_ERROR_INVALID_ARGUMENT &&
@@ -493,30 +504,33 @@ void EISubsystem::_dispatch_event(const Ref<InputEvent> &p_event) {
 				rt.held_since_frame = _frame_counter;
 			}
 
-			// Ensure the trigger chain is built (lazy). Then
-			// evaluate each trigger and collect results.
+			// Ensure the trigger chain is built (lazy) from the action's
+			// default_triggers.
 			if (rt.triggers.is_empty()) {
 				_ensure_action_triggers(rt, m.action);
 			}
 
-			// Build the per-trigger evaluation order: per-mapping
-			// triggers first, then action.default_triggers. We
-			// evaluate in declaration order and aggregate.
-			Vector<ETriggerEvent> evs;
+			// Merge this mapping's per-mapping triggers into the runtime
+			// chain, deduped by trigger ref, so they ALSO advance on the
+			// per-frame tick (see _process_triggers), not only on event
+			// arrival. Without this a per-mapping Hold/Pulse/Tap would
+			// never reach its time threshold. Position relative to the
+			// defaults is irrelevant: _aggregate_events is priority-based.
 			for (int ti = 0; ti < m.triggers.size(); ti++) {
-				Ref<EITrigger> t = m.triggers[ti];
-				if (t.is_null()) {
+				Ref<EITrigger> mt = m.triggers[ti];
+				if (mt.is_null() || rt.trigger_states.has(mt)) {
 					continue;
 				}
-				HashMap<Ref<EITrigger>, EITrigger::TriggerRuntimeState>::Iterator sit = rt.trigger_states.find(t);
-				if (!sit) {
-					EITrigger::TriggerRuntimeState s;
-					rt.trigger_states.insert(t, s);
-					sit = rt.trigger_states.find(t);
-				}
-				const EITrigger::UpdateResult ur = t->update_state(sit->value, v, 0.0, true, pressed);
-				evs.push_back(static_cast<ETriggerEvent>(ur));
+				rt.triggers.push_back(mt);
+				rt.trigger_states.insert(mt, EITrigger::TriggerRuntimeState());
 			}
+
+			// Refresh chord membership before evaluating so any
+			// EITriggerChord in the chain sees this frame's active flags.
+			_refresh_chord_states();
+
+			// Evaluate the whole chain (defaults + per-mapping) and aggregate.
+			Vector<ETriggerEvent> evs;
 			for (int ti = 0; ti < rt.triggers.size(); ti++) {
 				Ref<EITrigger> t = rt.triggers[ti];
 				if (t.is_null()) {
@@ -561,6 +575,9 @@ void EISubsystem::_process_triggers(double p_delta) {
 	// For every action with state, run each trigger with
 	// (state, current_value, dt, event_valid=false, pressed=is_held).
 	// Aggregate and fire any non-NONE results.
+	// Refresh chord membership first so EITriggerChord ticks see the
+	// current is_held state of their member actions.
+	_refresh_chord_states();
 	for (KeyValue<Ref<EIAction>, ActionRuntime> &kv : _action_runtimes) {
 		ActionRuntime &rt = kv.value;
 		if (rt.triggers.is_empty()) {
@@ -629,6 +646,35 @@ void EISubsystem::_cancel_all_held() {
 }
 
 // ---------------------------------------------------------------------------
+// Chord membership refresh
+// ---------------------------------------------------------------------------
+
+void EISubsystem::_refresh_chord_states() {
+	// EITriggerChord can't reach the subsystem from update_state(), so we
+	// feed it here: push each chord member action's current is_held state
+	// into every EITriggerChord found in any action's trigger chain. A full
+	// overwrite each call keeps shared chord resources from going stale.
+	for (KeyValue<Ref<EIAction>, ActionRuntime> &kv : _action_runtimes) {
+		const Vector<Ref<EITrigger>> &chain = kv.value.triggers;
+		for (int ti = 0; ti < chain.size(); ti++) {
+			EITriggerChord *chord = Object::cast_to<EITriggerChord>(chain[ti].ptr());
+			if (chord == nullptr) {
+				continue;
+			}
+			const int n = chord->get_chord_action_count();
+			for (int ci = 0; ci < n; ci++) {
+				Ref<EIAction> ca = chord->get_chord_action(ci);
+				if (ca.is_null()) {
+					continue;
+				}
+				const HashMap<Ref<EIAction>, ActionRuntime>::Iterator cit = _action_runtimes.find(ca);
+				chord->set_chord_action_active(ca, cit && cit->value.is_held);
+			}
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Diagnostics
 // ---------------------------------------------------------------------------
 
@@ -647,6 +693,11 @@ int EISubsystem::get_log_level() const {
 void EISubsystem::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_READY: {
+			// Enable the per-frame internal process tick. Without this,
+			// NOTIFICATION_INTERNAL_PROCESS is never delivered and all
+			// time-based triggers (Hold, Pulse, Tap/DoubleTap timeouts)
+			// would be frozen at runtime.
+			set_process_internal(true);
 			if (_log_level >= 1) {
 				print_line("[EI] Subsystem ready (log_level=", _log_level, ")");
 			}
@@ -655,14 +706,23 @@ void EISubsystem::_notification(int p_what) {
 			if (_log_level >= 2) {
 				print_line("[EI] _process tick");
 			}
-			// Per spec §4.6: "The dispatcher SHALL tick all active
-			// triggers with p_event_valid=false so that EITriggerHold
-			// and EITriggerPulse advance even between key events."
-			// The actual delta isn't easily accessible here; we use
-			// a 0 placeholder for now and rely on `tick()` for
-			// controlled-dt tests. (P6+ will compute the real delta
-			// from the engine's process_step.)
-			_process_triggers(0.016);
+			// Per spec §4.6: tick all active triggers with
+			// p_event_valid=false so EITriggerHold / EITriggerPulse advance
+			// between key events. Use the real frame delta so thresholds
+			// are wall-clock accurate regardless of frame rate. Tests call
+			// tick() directly with a controlled dt instead.
+			_frame_counter++;
+			_process_triggers(get_process_delta_time());
+		} break;
+		case NOTIFICATION_APPLICATION_FOCUS_OUT: {
+			// Spec §6.0: on focus loss, cancel all in-progress triggers
+			// and reset held actions to zero. SceneTree forwards this
+			// MainLoop notification to every node, so no explicit signal
+			// connection is needed.
+			_on_application_focus_changed(false);
+		} break;
+		case NOTIFICATION_APPLICATION_FOCUS_IN: {
+			_on_application_focus_changed(true);
 		} break;
 		case NOTIFICATION_WM_CLOSE_REQUEST: {
 			if (_log_level >= 1) {
@@ -709,6 +769,17 @@ void EISubsystem::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("_on_application_focus_changed", "focused"), &EISubsystem::_on_application_focus_changed);
 
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "log_level"), "set_log_level", "get_log_level");
+
+	// Expose the dispatch trigger-event enum to GDScript. It lives in the
+	// `ei` namespace (not as a member of any class), so without this the
+	// constants are invisible to script and `bind_action(...)` callers have
+	// no symbolic name to pass. Reachable as EISubsystem.EI_TRIGGER_EVENT_*.
+	BIND_ENUM_CONSTANT(EI_TRIGGER_EVENT_NONE);
+	BIND_ENUM_CONSTANT(EI_TRIGGER_EVENT_STARTED);
+	BIND_ENUM_CONSTANT(EI_TRIGGER_EVENT_TRIGGERED);
+	BIND_ENUM_CONSTANT(EI_TRIGGER_EVENT_ONGOING);
+	BIND_ENUM_CONSTANT(EI_TRIGGER_EVENT_COMPLETED);
+	BIND_ENUM_CONSTANT(EI_TRIGGER_EVENT_CANCELED);
 }
 
 } // namespace ei

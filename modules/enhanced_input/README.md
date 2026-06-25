@@ -9,8 +9,9 @@ It is the same idea as UE5 EI / Rewired / Unity's new Input System, but built
 natively inside the Godot engine so the data model lives in C++ and is
 inspector-friendly.
 
-> Module status: **P1–P6 complete**. P7 (custom inspector plugin) and P8
-> (polish / examples / docs) are still open. See [Implementation phases](#implementation-phases).
+> Module status: **P1–P6 complete**, P7 (custom inspector plugin) wired up
+> (registered as an `EditorPlugin`). P8 (polish / examples / docs) is still
+> open. See [Implementation phases](#implementation-phases).
 
 ---
 
@@ -153,7 +154,7 @@ func _ready() -> void:
     # 4. Subscribe via an EIComponent (auto-unbinds on _exit_tree).
     var comp := EIComponent.new()
     add_child(comp)
-    comp.bind(ia_accept, EI_TRIGGER_EVENT_TRIGGERED, _on_jump)
+    comp.bind(ia_accept, EISubsystem.EI_TRIGGER_EVENT_TRIGGERED, _on_jump)
 
 func _process(_dt: float) -> void:
     var v := Engine.get_singleton("EISubsystem").get_action_value_variant(ia_steer)
@@ -230,12 +231,12 @@ Subclasses live in `triggers/`:
 | Class                       | Event when…                                                       |
 | --------------------------- | ----------------------------------------------------------------- |
 | `EITriggerPressed`          | fires `STARTED` on press, `COMPLETED` on release                  |
-| `EITriggerReleased`         | fires `TRIGGERED` on a non-zero → zero transition                 |
-| `EITriggerHold(hold_time)`  | `STARTED` → `TRIGGERED` after threshold, `ONGOING` while held, `COMPLETED` on release |
-| `EITriggerTap(max_duration)`| fires `TRIGGERED` if released within window, else `CANCELED`     |
-| `EITriggerDoubleTap(max_gap)`| fires `TRIGGERED` on the second press within window              |
-| `EITriggerPulse(interval)`  | fires `TRIGGERED` periodically while held                         |
-| `EITriggerChord(actions)`   | fires `TRIGGERED` when all chord actions are active               |
+| `EITriggerRelease`          | fires `TRIGGERED` on a non-zero → zero transition                 |
+| `EITriggerHold` (`hold_time_threshold`)  | `STARTED` → `TRIGGERED` after threshold, `ONGOING` while held, `COMPLETED` on release |
+| `EITriggerTap` (`tap_release_time`)| fires `TRIGGERED` if released within window, else `CANCELED`     |
+| `EITriggerDoubleTap` (`double_tap_time`)| fires `TRIGGERED` on the second press within window              |
+| `EITriggerPulse` (`pulse_interval`)  | fires `TRIGGERED` periodically while held                         |
+| `EITriggerChord` (`chord_actions`)   | fires `TRIGGERED` when all chord actions are active               |
 
 Trigger chain order: per-mapping triggers first, then action defaults. When
 multiple triggers fire on the same frame, the priority aggregation rule from
@@ -255,7 +256,7 @@ forwards `bind(...)` / `unbind(...)` to the subsystem's
 ```gdscript
 var comp := EIComponent.new()
 add_child(comp)
-comp.bind(jump_action, EI_TRIGGER_EVENT_TRIGGERED, _on_jump)
+comp.bind(jump_action, EISubsystem.EI_TRIGGER_EVENT_TRIGGERED, _on_jump)
 ```
 
 ---
@@ -274,7 +275,7 @@ comp.bind(jump_action, EI_TRIGGER_EVENT_TRIGGERED, _on_jump)
 | `unbind_action(action, event, callable)`     | void         |                                                |
 | `clear_bindings()`                           | void         |                                                |
 | `inject_input(event)`                        | void         | programmatic dispatch                          |
-| `tick(delta)`                                | void         | drives time-based triggers (autoload wires this)|
+| `tick(delta)`                                | void         | drives time-based triggers (runtime auto-ticks via internal process; tests call directly) |
 | `get_action_value(action)` (C++)             | `EIValue`    | typed; see variant wrapper for GDScript        |
 | `get_action_value_variant(action)` (gd)      | `Dictionary` | `{type, x?, y?, z?}`                           |
 | `is_action_active(action)`                   | bool         | true while current value is non-zero           |
@@ -324,13 +325,16 @@ comp.bind(jump_action, EI_TRIGGER_EVENT_TRIGGERED, _on_jump)
 ```gdscript
 enum EIAction.ValueType { BOOL, AXIS1D, AXIS2D, AXIS3D }
 
-enum ETriggerEvent {
-    NONE       = 0,
-    STARTED    = 1,
-    TRIGGERED  = 2,
-    ONGOING    = 3,
-    COMPLETED  = 4,
-    CANCELED   = 5,
+# Dispatch trigger events. The enum is bound on EISubsystem, so from
+# GDScript use the fully-qualified constant names, e.g.
+# EISubsystem.EI_TRIGGER_EVENT_TRIGGERED.
+enum EISubsystem.ETriggerEvent {
+    EI_TRIGGER_EVENT_NONE       = 0,
+    EI_TRIGGER_EVENT_STARTED    = 1,
+    EI_TRIGGER_EVENT_TRIGGERED  = 2,
+    EI_TRIGGER_EVENT_ONGOING    = 3,
+    EI_TRIGGER_EVENT_COMPLETED  = 4,
+    EI_TRIGGER_EVENT_CANCELED   = 5,
 }
 ```
 
@@ -354,7 +358,7 @@ var ctx := EIBridge.import_context("ui_accept", "Gameplay", priority := 0)
 #   - triggers = []
 #   - consumes = true
 # Layer your own modifiers / triggers on top via add_mapping() afterwards:
-var hold := EITriggerHold.new(); hold.hold_time = 0.3
+var hold := EITriggerHold.new(); hold.hold_time_threshold = 0.3
 ctx.add_mapping(jump_event, ia_jump, [], [hold], false)
 
 Engine.get_singleton("EISubsystem").add_mapping_context(ctx, 0)
@@ -414,7 +418,7 @@ every build — don't edit it manually.
 | P4    | 7 concrete triggers (Pressed, Hold, Tap, DoubleTap, Pulse, Chord, Release) | done |
 | P5    | `EIMappingContext`, `EIInputEventSampler`, dispatcher, `EIComponent` | done |
 | P6    | `EIBridge` — read-only importer from `InputMap`        | done   |
-| P7    | Inspector plugin (dropdown for modifier/trigger subclasses, IMC list rendering) | **TODO** |
+| P7    | Inspector plugin (dropdown for modifier/trigger subclasses, IMC list rendering) | wired   |
 | P8    | Polish, examples, project-side demo (e.g. Plinko integration) | **TODO** |
 
 See the file header comments of each `.cpp` for the spec section it implements

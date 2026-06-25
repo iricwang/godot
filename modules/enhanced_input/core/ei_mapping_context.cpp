@@ -194,7 +194,11 @@ String EIMappingContext::get_context_name() const {
 // ---------------------------------------------------------------------------
 
 void EIMappingContext::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("add_mapping", "event", "action", "modifiers", "triggers", "consumes"), &EIMappingContext::add_mapping);
+	// modifiers / triggers default to empty, consumes defaults to true so
+	// the common 2-arg call `add_mapping(event, action)` works from GDScript
+	// (matches the README quick-start). DEFVAL order is right-to-left.
+	ClassDB::bind_method(D_METHOD("add_mapping", "event", "action", "modifiers", "triggers", "consumes"), &EIMappingContext::add_mapping,
+			DEFVAL(TypedArray<EIModifier>()), DEFVAL(TypedArray<EITrigger>()), DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("remove_mapping", "event", "action"), &EIMappingContext::remove_mapping);
 	ClassDB::bind_method(D_METHOD("clear_mappings"), &EIMappingContext::clear_mappings);
 

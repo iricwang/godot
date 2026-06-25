@@ -42,6 +42,7 @@
 #include "../triggers/ei_trigger_pressed.h"
 #include "../triggers/ei_trigger_hold.h"
 #include "../triggers/ei_trigger_release.h"
+#include "../triggers/ei_trigger_chord.h"
 
 #include "core/input/input_event.h"
 #include "core/object/class_db.h"
@@ -518,6 +519,7 @@ class CallbackSpy : public Object {
 
 public:
 	int call_count = 0;
+	int zero_call_count = 0; // bumped by the 0-arg callback below
 	int last_event_seen = -1; // raw int form of the ETriggerEvent
 	Vector3 last_value_axis3d; // for inspecting Axis3D passthroughs
 	EIValue last_value_ei; // typed EIValue from the dispatcher
@@ -540,9 +542,18 @@ public:
 		(void)p_action;
 	}
 
+	// Zero-argument callback — the shape every FortySix Activity uses.
+	// The dispatcher fires with (action, event, value); a 0-arg method
+	// rejects the extra args (TOO_MANY) unless the dispatcher degrades
+	// the argc, so this guards the _fire_event arity fix.
+	void on_event_zero() {
+		zero_call_count++;
+	}
+
 protected:
 	static void _bind_methods() {
 		ClassDB::bind_method(D_METHOD("on_event", "action", "event", "value"), &CallbackSpy::on_event);
+		ClassDB::bind_method(D_METHOD("on_event_zero"), &CallbackSpy::on_event_zero);
 	}
 };
 
@@ -735,6 +746,115 @@ TEST_CASE("[EnhancedInput][Subsystem] bind_action rejects null / invalid inputs"
 	f.sub->add_mapping_context(ctx, 0);
 	f.sub->inject_input(space);
 	CHECK(spy->call_count == 0);
+
+	memdelete(spy);
+}
+
+// ---------------------------------------------------------------------------
+// Regression: per-mapping triggers must advance on tick (fix #2)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("[EnhancedInput][Subsystem] per-mapping trigger advances via tick (regression)") {
+	Fixture f;
+	Ref<EIAction> a = make_bool_action();
+	// NOTE: no default_triggers — the Hold is attached as a PER-MAPPING
+	// trigger. Before the fix, per-mapping triggers only got event-time
+	// updates and never received tick(), so they never crossed threshold.
+
+	Ref<EITriggerHold> hold;
+	hold.instantiate();
+	hold->set_hold_time_threshold(0.3);
+
+	Ref<EIMappingContext> ctx;
+	ctx.instantiate();
+	TypedArray<EITrigger> per_mapping_trigs;
+	per_mapping_trigs.push_back(hold);
+	ctx->add_mapping(make_key(Key::SPACE, true), a, TypedArray<EIModifier>(), per_mapping_trigs, true);
+	f.sub->add_mapping_context(ctx, 0);
+
+	// Press: STARTED.
+	f.sub->inject_input(make_key(Key::SPACE, true));
+	CHECK(f.sub->get_action_trigger_event(a) == EI_TRIGGER_EVENT_STARTED);
+
+	// Below threshold: still STARTED, no new event.
+	f.sub->tick(0.1);
+	CHECK(f.sub->get_action_trigger_event(a) == EI_TRIGGER_EVENT_STARTED);
+
+	// Crossing the threshold via tick — the per-mapping Hold fires TRIGGERED.
+	f.sub->tick(0.25);
+	CHECK(f.sub->get_action_trigger_event(a) == EI_TRIGGER_EVENT_TRIGGERED);
+}
+
+// ---------------------------------------------------------------------------
+// Regression: chord fires from subsystem-pushed member state (fix #3)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("[EnhancedInput][Subsystem] chord fires via subsystem-pushed member state (regression)") {
+	Fixture f;
+	Ref<EIAction> a = make_bool_action("A");
+	Ref<EIAction> b = make_bool_action("B");
+	Ref<EIAction> host = make_bool_action("Host");
+
+	// `host` fires a chord requiring both A and B to be held. Nothing in
+	// the test calls set_chord_action_active(); the subsystem must push
+	// the member state itself (the bug that #3 fixed).
+	Ref<EITriggerChord> chord;
+	chord.instantiate();
+	chord->add_chord_action(a);
+	chord->add_chord_action(b);
+	TypedArray<EITrigger> host_trigs;
+	host_trigs.push_back(chord);
+	host->set_default_triggers(host_trigs);
+
+	Ref<EIMappingContext> ctx;
+	ctx.instantiate();
+	ctx->add_mapping(make_key(Key::A, true), a, TypedArray<EIModifier>(), TypedArray<EITrigger>(), false);
+	ctx->add_mapping(make_key(Key::B, true), b, TypedArray<EIModifier>(), TypedArray<EITrigger>(), false);
+	ctx->add_mapping(make_key(Key::C, true), host, TypedArray<EIModifier>(), TypedArray<EITrigger>(), false);
+	f.sub->add_mapping_context(ctx, 0);
+
+	// Establish the host runtime so its chord trigger gets ticked.
+	f.sub->inject_input(make_key(Key::C, true));
+
+	// Press A and B — both members become held.
+	f.sub->inject_input(make_key(Key::A, true));
+	f.sub->inject_input(make_key(Key::B, true));
+
+	// Tick: subsystem refreshes chord membership (A, B held) and fires.
+	f.sub->tick(0.016);
+	CHECK(f.sub->get_action_trigger_event(host) == EI_TRIGGER_EVENT_TRIGGERED);
+
+	// Release A — chord no longer satisfied; next tick completes.
+	f.sub->inject_input(make_key(Key::A, false));
+	f.sub->tick(0.016);
+	CHECK(f.sub->get_action_trigger_event(host) == EI_TRIGGER_EVENT_COMPLETED);
+}
+
+// ---------------------------------------------------------------------------
+// Regression: zero-arg callbacks fire (arity degraded in _fire_event)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("[EnhancedInput][Subsystem] zero-arg callback fires despite 3-arg dispatch (regression)") {
+	Fixture f;
+	Ref<EIAction> a = make_bool_action();
+	Ref<EITriggerPressed> pressed;
+	pressed.instantiate();
+	TypedArray<EITrigger> def_trigs;
+	def_trigs.push_back(pressed);
+	a->set_default_triggers(def_trigs);
+
+	Ref<InputEventKey> space = make_key(Key::SPACE, true);
+	Ref<EIMappingContext> ctx = make_imc(space, a);
+	f.sub->add_mapping_context(ctx, 0);
+
+	CallbackSpy *spy = memnew(CallbackSpy);
+	// Bind a ZERO-arg method. Before the fix the dispatcher always called
+	// with 3 args; an Object/GDScript method rejects extra args and never
+	// runs, so this would stay 0.
+	f.sub->bind_action(a, EI_TRIGGER_EVENT_STARTED, Callable(spy, "on_event_zero"));
+
+	f.sub->inject_input(space);
+	CHECK(spy->zero_call_count == 1);
 
 	memdelete(spy);
 }

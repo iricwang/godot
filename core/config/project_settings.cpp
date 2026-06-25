@@ -1483,6 +1483,18 @@ bool ProjectSettings::has_custom_feature(const String &p_feature) const {
 	return custom_features.has(p_feature);
 }
 
+void ProjectSettings::add_custom_feature(const String &p_feature) {
+	// Runtime-only: deliberately does not mark settings dirty, so the
+	// addition will not be written back to project.godot.
+	if (!p_feature.is_empty()) {
+		custom_features.insert(p_feature);
+	}
+}
+
+void ProjectSettings::remove_custom_feature(const String &p_feature) {
+	custom_features.erase(p_feature);
+}
+
 const HashMap<StringName, ProjectSettings::AutoloadInfo> &ProjectSettings::get_autoload_list() const {
 	return autoloads;
 }

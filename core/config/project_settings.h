@@ -214,6 +214,11 @@ public:
 	bool is_project_loaded() const;
 
 	bool has_custom_feature(const String &p_feature) const;
+	// Runtime-only mutation of the custom-feature set. These NEVER persist
+	// to project.godot. Intended for editor tooling (e.g. device preview)
+	// that wants to toggle a feature tag without polluting the project file.
+	void add_custom_feature(const String &p_feature);
+	void remove_custom_feature(const String &p_feature);
 
 	// Change tracking methods
 	PackedStringArray get_changed_settings() const;

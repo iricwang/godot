@@ -12,6 +12,7 @@ extends SceneTree
 ## awaits as needed and rely on FLAG_LOAD_SYNC for synchronous attach.
 
 const GameStateService := preload("res://services/game_state_service.gd")
+const PlatformBranchScript := preload("res://core/platform_branch.gd")
 
 
 func _initialize() -> void:
@@ -162,6 +163,26 @@ func _initialize() -> void:
 	# is invalidated, so we don't probe it again — just trust the green run.
 	app.shutdown()
 	print("[verify_demo] ok: shutdown returned cleanly")
+
+	# 13. Platform branch — verify the Device-Preview / feature-tag plumbing.
+	# In a normal headless run (no `--features mobile` on the command line and
+	# no editor-side Device Preview active) the host platform's tags are the
+	# only ones present, so on Windows/Linux/macOS we expect `pc=true,
+	# mobile=false`. The check is parameterised on the active branch so the
+	# same test passes verbatim when invoked with `--features mobile` (which
+	# is what F5 launches with after a phone preset is selected).
+	var branch: String = PlatformBranchScript.get_active_branch()
+	if OS.has_feature("mobile"):
+		assert(branch == "mobile", "mobile tag present but branch resolved to %s" % branch)
+		assert(PlatformBranchScript.is_mobile() and not PlatformBranchScript.is_pc(),
+				"is_mobile/is_pc disagree with OS.has_feature in the mobile branch")
+		print("[verify_demo] ok: platform branch = mobile (Device Preview / --features mobile in effect)")
+	else:
+		assert(branch == "pc" or branch == "web",
+				"no mobile tag yet branch resolved to %s" % branch)
+		assert(not PlatformBranchScript.is_mobile(),
+				"is_mobile() must be false when OS.has_feature('mobile') is false")
+		print("[verify_demo] ok: platform branch = %s (no mobile tag injected)" % branch)
 
 	print("=== ALL ASSERTIONS PASSED ===")
 	quit(0)

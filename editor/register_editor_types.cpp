@@ -126,6 +126,7 @@
 #include "editor/scene/texture/texture_editor_plugin.h"
 #include "editor/scene/texture/texture_layered_editor_plugin.h"
 #include "editor/scene/texture/texture_region_editor_plugin.h"
+#include "editor/plugins/device_preview/device_preview_plugin.h"
 #include "editor/plugins/device_preview/device_profile.h"
 #include "editor/script/editor_script.h"
 #include "editor/script/editor_script_plugin.h"
@@ -234,7 +235,12 @@ void register_editor_types() {
 	EditorPlugins::add_by_type<ControlEditorPlugin>();
 	EditorPlugins::add_by_type<CPUParticles3DEditorPlugin>();
 	EditorPlugins::add_by_type<CurveEditorPlugin>();
-	// Device preview resolution selection is shown in the Game workspace toolbar.
+	// Device preview resolution selection is shown both in the 2D editor
+	// toolbar (DevicePreviewPlugin) and the Game workspace toolbar. The
+	// 2D-toolbar entry also drives the editor-side mobile/pc feature-tag
+	// injection that lets `OS.has_feature("mobile")` short-circuit at
+	// design time and at F5 runtime.
+	EditorPlugins::add_by_type<DevicePreviewPlugin>();
 	if (!Engine::get_singleton()->is_recovery_mode_hint()) {
 		EditorPlugins::add_by_type<DebugAdapterServer>();
 	}

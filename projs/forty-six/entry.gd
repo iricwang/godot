@@ -12,6 +12,7 @@ extends Control
 
 const GameStateService := preload("res://services/game_state_service.gd")
 const AudioService := preload("res://services/audio_service.gd")
+const PlatformBranchScript := preload("res://core/platform_branch.gd")
 
 var app: Application
 var _game_state: GameStateService
@@ -19,6 +20,20 @@ var _audio: AudioService
 
 
 func _ready() -> void:
+	# Resolve and announce the active platform branch FIRST so the boot log
+	# makes the editor-side Device Preview selection observable. Selecting a
+	# phone preset in the 2D toolbar or in the Game workspace injects the
+	# "mobile" tag into ProjectSettings::custom_features, which OS.has_feature
+	# reads via fallthrough; picking a Desktop preset or "Free" reverts the
+	# branch to "pc".
+	var branch: String = PlatformBranchScript.get_active_branch()
+	print("[platform_branch] active branch = %s  (mobile=%s pc=%s web=%s)" % [
+		branch,
+		OS.has_feature("mobile"),
+		OS.has_feature("pc"),
+		OS.has_feature("web"),
+	])
+
 	# Dark backdrop so the framed UI reads against the window.
 	var bg := ColorRect.new()
 	bg.color = Color(0.07, 0.08, 0.1)

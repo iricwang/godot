@@ -38,6 +38,7 @@
 #include "editor/debugger/editor_debugger_node.h"
 #include "editor/debugger/script_editor_debugger.h"
 #include "editor/plugins/device_preview/device_database.h"
+#include "editor/plugins/device_preview/device_preview_plugin.h"
 #include "editor/editor_interface.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
@@ -773,6 +774,7 @@ void GameView::_selection_options_menu_id_pressed(int p_id) {
 }
 
 void GameView::_preview_resolution_menu_id_pressed(int p_id) {
+	Ref<DeviceProfile> selected_profile;
 	if (p_id == PREVIEW_RESOLUTION_FREE) {
 		preview_resolution = Size2i();
 		preview_resolution_device_name = String();
@@ -780,9 +782,25 @@ void GameView::_preview_resolution_menu_id_pressed(int p_id) {
 		int idx = p_id - PREVIEW_RESOLUTION_DEVICE_START;
 		const Vector<Ref<DeviceProfile>> &presets = DeviceDatabase::get_presets();
 		if (idx >= 0 && idx < presets.size()) {
-			Ref<DeviceProfile> profile = presets[idx];
-			preview_resolution = profile->get_resolution();
-			preview_resolution_device_name = profile->get_device_name();
+			selected_profile = presets[idx];
+			preview_resolution = selected_profile->get_resolution();
+			preview_resolution_device_name = selected_profile->get_device_name();
+		}
+	}
+
+	// Drive the shared mobile/pc feature-tag set through DevicePreviewPlugin
+	// so picking a phone in the Game workspace is equivalent to picking one
+	// in the 2D-toolbar device picker -- both will make
+	// `OS.has_feature("mobile")` report true at design time and at F5
+	// runtime. We deliberately do NOT call into _apply_preview, because the
+	// Game workspace already has its own embedded-window sizing path
+	// (handled by _update_embed_window_size below); only the feature-tag
+	// portion is shared.
+	if (DevicePreviewPlugin *dp = DevicePreviewPlugin::get_singleton()) {
+		if (selected_profile.is_valid()) {
+			dp->set_active_feature_tags(selected_profile->get_effective_feature_tags());
+		} else {
+			dp->clear_active_feature_tags();
 		}
 	}
 
@@ -832,13 +850,22 @@ void GameView::_build_preview_resolution_menu() {
 }
 
 void GameView::_update_preview_resolution_menu_label() {
+	// Feature tags currently injected by the 2D-toolbar device picker.
+	// We surface them here too so the developer can confirm the active
+	// branch from the Game workspace without flipping back to 2D.
+	PackedStringArray active_tags;
+	if (DevicePreviewPlugin *dp = DevicePreviewPlugin::get_singleton()) {
+		active_tags = dp->get_active_feature_tags();
+	}
+	const String tag_hint = active_tags.is_empty() ? String() : " [" + String(",").join(active_tags) + "]";
+
 	if (preview_resolution_device_name.is_empty()) {
-		preview_resolution_menu->set_text(TTRC("Project"));
-		preview_resolution_menu->set_tooltip_text(TTRC("Use the project window size for the embedded game preview."));
+		preview_resolution_menu->set_text(String(TTRC("Project")) + tag_hint);
+		preview_resolution_menu->set_tooltip_text(TTRC("Use the project window size for the embedded game preview.\nFeature tags shown in brackets reflect the 2D toolbar's device picker."));
 	} else {
 		Size2i oriented_resolution = _apply_preview_orientation(preview_resolution);
-		preview_resolution_menu->set_text(preview_resolution_device_name);
-		preview_resolution_menu->set_tooltip_text(vformat(TTR("Preview Resolution: %s (%d×%d)"), preview_resolution_device_name, oriented_resolution.x, oriented_resolution.y));
+		preview_resolution_menu->set_text(preview_resolution_device_name + tag_hint);
+		preview_resolution_menu->set_tooltip_text(vformat(TTR("Preview Resolution: %s (%d×%d)\nFeature tags shown in brackets reflect the 2D toolbar's device picker."), preview_resolution_device_name, oriented_resolution.x, oriented_resolution.y));
 	}
 }
 
@@ -1751,6 +1778,14 @@ GameView::GameView(Ref<GameViewDebugger> p_debugger, EmbeddedProcessBase *p_embe
 	preview_resolution_menu->get_popup()->connect(SceneStringName(id_pressed), callable_mp(this, &GameView::_preview_resolution_menu_id_pressed));
 	_build_preview_resolution_menu();
 	_update_preview_resolution_menu_label();
+
+	// Keep the [mobile]/[pc] hint live as the 2D-toolbar device picker
+	// switches branches. The signal is bound on DevicePreviewPlugin in its
+	// _bind_methods, and the plugin singleton exists for the lifetime of
+	// the editor session, so an unbounded connection is fine here.
+	if (DevicePreviewPlugin *dp = DevicePreviewPlugin::get_singleton()) {
+		dp->connect("active_feature_tags_changed", callable_mp(this, &GameView::_update_preview_resolution_menu_label));
+	}
 
 	preview_orientation_button = memnew(Button);
 	embedding_hb->add_child(preview_orientation_button);

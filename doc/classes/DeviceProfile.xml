@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="DeviceProfile" inherits="Resource" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		A device preset used by the editor's resolution preview to drive viewport sizing and the active mobile/pc feature branch.
+	</brief_description>
+	<description>
+		Each [DeviceProfile] describes one entry in the editor's device picker (the [code]Free / iPhone 15 Pro / ...[/code] menu in the 2D toolbar and in the Game workspace). Built-in presets live in [code]DeviceDatabase[/code]; you can also instantiate this resource yourself and save it as a [code].tres[/code] alongside the project.
+		Beyond the obvious resolution / DPI / safe-area fields, [DeviceProfile] carries a [member device_class] enum and an optional [member feature_tags] override. Together they control which engine feature tags get injected into [ProjectSettings] (and forwarded to F5-launched child processes via [code]GODOT_EDITOR_CUSTOM_FEATURES[/code]) for the duration of the preview. The default mapping is:
+		[codeblock]
+		PHONE / TABLET  -> ["mobile"]
+		DESKTOP         -> ["pc"]
+		CONSOLE         -> []   (left to the project)
+		GENERIC         -> []
+		[/codeblock]
+		This lets scripts branch on [code]OS.has_feature("mobile")[/code] / [code]OS.has_feature("pc")[/code] at design time (in [code]@tool[/code] scripts) and at F5 runtime, without round-tripping through the export-preset dialog.
+		The host-platform [code]pc[/code] tag is hard-coded by the OS layer on Windows / Linux / macOS and cannot be turned off. The canonical "are we previewing a mobile device?" check is therefore [code]OS.has_feature("mobile")[/code], not [code]!OS.has_feature("pc")[/code].
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_effective_feature_tags" qualifiers="const">
+			<return type="PackedStringArray" />
+			<description>
+				Returns the feature tags that will actually be injected when this profile is active. Equal to [member feature_tags] when it is non-empty (stripped and lowercased); otherwise derived from [member device_class] using the default mapping documented in the class description.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="device_class" type="int" setter="set_device_class" getter="get_device_class" enum="DeviceProfile.DeviceClass" default="0">
+			Broad device classification. Used by the picker UI to group entries (Phones / Tablets / Desktop / ...) and as the fallback source for [method get_effective_feature_tags] when [member feature_tags] is empty.
+		</member>
+		<member name="device_name" type="String" setter="set_device_name" getter="get_device_name" default="&quot;&quot;">
+			Display name shown in the device picker. Should be unique within the active database; [code]DeviceDatabase.find_by_name[/code] uses it as a key.
+		</member>
+		<member name="dpi" type="float" setter="set_dpi" getter="get_dpi" default="320.0">
+			Pixel density in dots-per-inch, used by the editor's content-scale preview to compute the on-screen size of the device frame.
+		</member>
+		<member name="feature_tags" type="PackedStringArray" setter="set_feature_tags" getter="get_feature_tags" default="PackedStringArray()">
+			Explicit list of engine feature tags this profile should inject. When non-empty, it overrides the [member device_class]-based default. Entries are stripped and lowercased before use so the project sees the canonical Godot tag form.
+		</member>
+		<member name="resolution" type="Vector2i" setter="set_resolution" getter="get_resolution" default="Vector2i(1080, 1920)">
+			Native pixel resolution of the device (portrait orientation by convention; the picker UI rotates it on demand).
+		</member>
+		<member name="safe_area" type="Rect2" setter="set_safe_area" getter="get_safe_area" default="Rect2(0, 0, 0, 0)">
+			Pixel-space safe area (e.g. inside the notch / home-indicator margins). Origin is the top-left of [member resolution]. Leave as the zero rectangle to disable safe-area visualization.
+		</member>
+	</members>
+	<constants>
+		<constant name="DEVICE_CLASS_GENERIC" value="0" enum="DeviceClass">
+			Unclassified preset. Injects no feature tags by default; relies on the host platform's own tag set.
+		</constant>
+		<constant name="DEVICE_CLASS_PHONE" value="1" enum="DeviceClass">
+			Phone-class device. Default tag: [code]mobile[/code].
+		</constant>
+		<constant name="DEVICE_CLASS_TABLET" value="2" enum="DeviceClass">
+			Tablet-class device. Default tag: [code]mobile[/code].
+		</constant>
+		<constant name="DEVICE_CLASS_DESKTOP" value="3" enum="DeviceClass">
+			Desktop window preset. Default tag: [code]pc[/code]. Note that on Windows / Linux / macOS the host already reports [code]pc[/code] regardless of this preset.
+		</constant>
+		<constant name="DEVICE_CLASS_CONSOLE" value="4" enum="DeviceClass">
+			Console device. Default tag set is empty; define your own via [member feature_tags].
+		</constant>
+	</constants>
+</class>

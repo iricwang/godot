@@ -22,10 +22,9 @@ EIAutoload="*res://core/ei_autoload.gd"
 
 [display]
 
-window/size/viewport_width=960
-window/size/viewport_height=720
+window/size/viewport_width=390
+window/size/viewport_height=844
 window/stretch/mode="canvas_items"
-window/stretch/aspect="expand"
 
 [input]
 

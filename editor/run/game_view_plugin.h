@@ -256,6 +256,12 @@ class GameView : public VBoxContainer {
 	void _preview_resolution_menu_id_pressed(int p_id);
 	void _preview_orientation_toggled(bool p_pressed);
 	void _build_preview_resolution_menu();
+	// Pulled from DevicePreviewState when its state_changed signal fires.
+	// Mirrors the singleton's device_name + landscape into local cache so
+	// the rest of GameView (menu rebuild, label update, embed sizing,
+	// _update_arguments_for_instance) can keep using its existing fields
+	// without touching the singleton on every read.
+	void _on_device_preview_state_changed();
 	void _update_preview_resolution_menu_label();
 	void _update_preview_orientation_button();
 	bool _has_preview_resolution() const;

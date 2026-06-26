@@ -896,6 +896,49 @@ Error ProjectSettings::setup(const String &p_path, const String &p_main_pack, bo
 
 	load_scene_groups_cache();
 
+#ifdef TOOLS_ENABLED
+	// Editor-driven viewport override. The Game workspace's Resolution
+	// picker writes a "WxH" string into GODOT_EDITOR_VIEWPORT_OVERRIDE
+	// before spawning each F5 child so the child's internal render
+	// resolution (display/window/size/viewport_width/height -- read by
+	// main.cpp for `content_scale_size`) matches what the user picked.
+	// Without this, --resolution would only size the OS window while the
+	// game still rendered at project.godot's default viewport, leaving
+	// the preview content stretched or squished inside the embedded slot.
+	// Applied AFTER project.godot + override.cfg load so it wins; never
+	// persisted (we only mutate the in-memory ProjectSettings).
+	if (err == OK && !Engine::get_singleton()->is_editor_hint()) {
+		const String viewport_override = OS::get_singleton()->get_environment("GODOT_EDITOR_VIEWPORT_OVERRIDE");
+		if (!viewport_override.is_empty()) {
+			Vector<String> parts = viewport_override.split("x");
+			if (parts.size() == 2) {
+				const int w = parts[0].strip_edges().to_int();
+				const int h = parts[1].strip_edges().to_int();
+				if (w > 0 && h > 0) {
+					set_setting("display/window/size/viewport_width", w);
+					set_setting("display/window/size/viewport_height", h);
+				}
+			}
+		}
+
+		// Editor-driven orientation override. The orientation toggle in
+		// the Game workspace writes a ScreenOrientation enum int into
+		// GODOT_EDITOR_ORIENTATION_OVERRIDE. On mobile platforms this
+		// affects OS-level rotation lock; on desktop it just lets game
+		// code that branches on `DisplayServer.screen_get_orientation()`
+		// or `display/window/handheld/orientation` see the preview's
+		// intent (e.g. "this run is the portrait variant").
+		const String orientation_override = OS::get_singleton()->get_environment("GODOT_EDITOR_ORIENTATION_OVERRIDE");
+		if (!orientation_override.is_empty()) {
+			const int orientation = orientation_override.strip_edges().to_int();
+			// Match DisplayServerEnums::ScreenOrientation range (0..6).
+			if (orientation >= 0 && orientation <= 6) {
+				set_setting("display/window/handheld/orientation", orientation);
+			}
+		}
+	}
+#endif
+
 	project_loaded = err == OK;
 	return err;
 }

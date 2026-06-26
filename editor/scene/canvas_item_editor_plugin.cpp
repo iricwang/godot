@@ -52,6 +52,8 @@
 #include "editor/run/editor_run_bar.h"
 #include "editor/scene/gui/control_editor_plugin.h"
 #include "editor/script/script_editor_plugin.h"
+#include "editor/plugins/device_preview/device_database.h"
+#include "editor/plugins/device_preview/device_preview_state.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
 #include "editor/themes/editor_theme_manager.h"
@@ -4437,36 +4439,78 @@ void CanvasItemEditor::_load_resolution_guide_settings() {
 	resolution_preset_button->set_block_signals(true);
 	resolution_width_spin->set_block_signals(true);
 	resolution_height_spin->set_block_signals(true);
-	resolution_show_checkbox->set_block_signals(true);
+	resolution_show_button->set_block_signals(true);
 	resolution_color_button->set_block_signals(true);
 	resolution_center_button->set_block_signals(true);
 
-	resolution_show_checkbox->set_pressed(enable);
+	resolution_show_button->set_pressed(enable);
 	resolution_width_spin->set_value(width);
 	resolution_height_spin->set_value(height);
+	// Disable the SpinBoxes (visually distinct, still readable) when a
+	// device drives the dimensions -- typing into them when a phone is
+	// selected would be ignored anyway, so reflect that in the UI.
+	{
+		const bool device_locked = DevicePreviewState::get_singleton() &&
+				DevicePreviewState::get_singleton()->has_device();
+		resolution_width_spin->set_editable(!device_locked);
+		resolution_height_spin->set_editable(!device_locked);
+		const String spin_tip = device_locked
+				? TTR("Driven by the selected device — switch to Custom to edit.")
+				: TTR("Reference frame size in pixels.");
+		resolution_width_spin->set_tooltip_text(spin_tip);
+		resolution_height_spin->set_tooltip_text(spin_tip);
+	}
 	resolution_color_button->set_pick_color(color);
 	resolution_center_button->set_pressed(center_aligned);
 
 	int preset_index = 0;
-	if (width == 720 && height == 1280) {
-		preset_index = 1;
-	} else if (width == 1080 && height == 1920) {
-		preset_index = 2;
-	} else if (width == 1440 && height == 2560) {
-		preset_index = 3;
-	} else if (width == 1170 && height == 2532) {
-		preset_index = 4;
-	} else if (width == 1290 && height == 2796) {
-		preset_index = 5;
+	// Match the persisted width/height against either DevicePreviewState's
+	// active device (preferred -- gives nicer "Phone X (WxH)" labels) or
+	// any DeviceDatabase preset that happens to be exactly this size.
+	if (DevicePreviewState *dps = DevicePreviewState::get_singleton(); dps && dps->has_device()) {
+		const Size2i oriented = dps->get_resolution_oriented();
+		if (oriented.x == width && oriented.y == height) {
+			const String active_name = dps->get_device_name();
+			const Vector<Ref<DeviceProfile>> &presets = DeviceDatabase::get_presets();
+			for (int i = 0; i < presets.size(); ++i) {
+				if (presets[i]->get_device_name() == active_name) {
+					preset_index = resolution_preset_button->get_item_index(1 + i);
+					break;
+				}
+			}
+		}
+	}
+	// Fallback scan: pick any DeviceDatabase preset whose oriented or
+	// native resolution matches the current width/height. This keeps the
+	// dropdown label correct when the user edits the legacy editor-setting
+	// keys directly without going through DevicePreviewState.
+	if (preset_index == 0) {
+		const Vector<Ref<DeviceProfile>> &presets = DeviceDatabase::get_presets();
+		for (int i = 0; i < presets.size(); ++i) {
+			const Size2i r = presets[i]->get_resolution();
+			if ((r.x == width && r.y == height) || (r.y == width && r.x == height)) {
+				preset_index = resolution_preset_button->get_item_index(1 + i);
+				break;
+			}
+		}
 	}
 	resolution_preset_button->select(preset_index);
 
 	resolution_preset_button->set_block_signals(false);
 	resolution_width_spin->set_block_signals(false);
 	resolution_height_spin->set_block_signals(false);
-	resolution_show_checkbox->set_block_signals(false);
+	resolution_show_button->set_block_signals(false);
 	resolution_color_button->set_block_signals(false);
 	resolution_center_button->set_block_signals(false);
+
+	// Push icons onto the new FlatButton toggles (must be done after
+	// construction because they load from the editor theme).
+	_update_resolution_guide_icons();
+
+	// Final pass: keep the orientation toggle in sync with the W/H we
+	// just painted. Lives outside the block_signals window because
+	// set_pressed_no_signal handles re-entrancy on its own.
+	_update_resolution_orientation_button();
 }
 
 void CanvasItemEditor::_apply_resolution_to_layout() {
@@ -4536,34 +4580,38 @@ void CanvasItemEditor::_scene_closed() {
 }
 
 void CanvasItemEditor::_resolution_preset_selected(int p_index) {
-	int width = 1080;
-	int height = 1920;
-	switch (p_index) {
-		case 1:
-			width = 720;
-			height = 1280;
-			break;
-		case 2:
-			width = 1080;
-			height = 1920;
-			break;
-		case 3:
-			width = 1440;
-			height = 2560;
-			break;
-		case 4:
-			width = 1170;
-			height = 2532;
-			break;
-		case 5:
-			width = 1290;
-			height = 2796;
-			break;
-		default:
-			return;
+	// `p_index` is the popup's local index; resolve back to the metadata id
+	// we stored when adding items. ID 0 = Custom (clear device); ID >= 1
+	// is the DeviceDatabase preset at `id - 1`.
+	const int id = resolution_preset_button->get_item_id(p_index);
+	DevicePreviewState *dps = DevicePreviewState::get_singleton();
+	if (id == 0) {
+		// Custom: drop the shared device selection so the Game workspace
+		// also reverts to "Project" -- the user is overriding by hand.
+		if (dps) {
+			dps->clear_device();
+		}
+		// Hide the guide for a custom 0,0 default; the next legitimate
+		// width/height edit re-enables it implicitly via _load_resolution_guide_settings.
+		return;
 	}
-	EditorSettings::get_singleton()->set_setting("editors/2d/resolution_guide/width", width);
-	EditorSettings::get_singleton()->set_setting("editors/2d/resolution_guide/height", height);
+	const int preset_idx = id - 1;
+	const Vector<Ref<DeviceProfile>> &presets = DeviceDatabase::get_presets();
+	if (preset_idx < 0 || preset_idx >= presets.size()) {
+		return;
+	}
+	if (dps) {
+		dps->set_device_name(presets[preset_idx]->get_device_name());
+		// _on_device_preview_state_changed() will run (we're subscribed
+		// to state_changed) and push the oriented W/H into the editor
+		// settings + re-anchor the scene.
+		return;
+	}
+	// Fallback when the singleton hasn't been registered yet -- keep the
+	// previous behaviour so the toolbar still works in isolation.
+	const Size2i res = presets[preset_idx]->get_resolution();
+	EditorSettings::get_singleton()->set_setting("editors/2d/resolution_guide/width", res.x);
+	EditorSettings::get_singleton()->set_setting("editors/2d/resolution_guide/height", res.y);
 	_load_resolution_guide_settings();
 	_apply_resolution_to_layout();
 	update_viewport();
@@ -4571,6 +4619,12 @@ void CanvasItemEditor::_resolution_preset_selected(int p_index) {
 
 void CanvasItemEditor::_resolution_width_changed(double p_value) {
 	EditorSettings::get_singleton()->set_setting("editors/2d/resolution_guide/width", (int)p_value);
+	// Typing into the SpinBox means the user has gone off-preset; release
+	// the shared device selection so the Game workspace doesn't keep
+	// claiming "iPhone 15 Pro" when this number drifts from 393.
+	if (DevicePreviewState *dps = DevicePreviewState::get_singleton()) {
+		dps->clear_device();
+	}
 	_load_resolution_guide_settings();
 	_apply_resolution_to_layout();
 	update_viewport();
@@ -4578,9 +4632,74 @@ void CanvasItemEditor::_resolution_width_changed(double p_value) {
 
 void CanvasItemEditor::_resolution_height_changed(double p_value) {
 	EditorSettings::get_singleton()->set_setting("editors/2d/resolution_guide/height", (int)p_value);
+	if (DevicePreviewState *dps = DevicePreviewState::get_singleton()) {
+		dps->clear_device();
+	}
 	_load_resolution_guide_settings();
 	_apply_resolution_to_layout();
 	update_viewport();
+}
+
+void CanvasItemEditor::_on_device_preview_state_changed() {
+	DevicePreviewState *dps = DevicePreviewState::get_singleton();
+	if (!dps || !resolution_preset_button) {
+		return;
+	}
+	if (dps->has_device()) {
+		const Size2i oriented = dps->get_resolution_oriented();
+		// Push device dimensions into the editor-settings keys the existing
+		// drawer reads; _load_resolution_guide_settings then mirrors them
+		// back into the SpinBoxes + preset dropdown.
+		EditorSettings::get_singleton()->set_setting("editors/2d/resolution_guide/width", oriented.x);
+		EditorSettings::get_singleton()->set_setting("editors/2d/resolution_guide/height", oriented.y);
+	} else {
+		// Custom mode: the user-edited W/H stays authoritative for the
+		// magnitude, but landscape flips swap the two so the orientation
+		// toggle is honoured even without a device. Self-correcting --
+		// if W/H is already in the desired orientation this is a no-op.
+		const int cur_w = (int)EditorSettings::get_singleton()->get("editors/2d/resolution_guide/width");
+		const int cur_h = (int)EditorSettings::get_singleton()->get("editors/2d/resolution_guide/height");
+		if (cur_w > 0 && cur_h > 0 && cur_w != cur_h) {
+			const bool now_landscape = cur_w > cur_h;
+			if (now_landscape != dps->is_landscape()) {
+				EditorSettings::get_singleton()->set_setting("editors/2d/resolution_guide/width", cur_h);
+				EditorSettings::get_singleton()->set_setting("editors/2d/resolution_guide/height", cur_w);
+			}
+		}
+	}
+	_load_resolution_guide_settings();
+	_apply_resolution_to_layout();
+	update_viewport();
+}
+
+void CanvasItemEditor::_update_resolution_guide_icons() {
+	if (!resolution_show_button || !resolution_center_button || !resolution_orientation_button) {
+		return;
+	}
+	resolution_show_button->set_button_icon(get_editor_theme_icon(
+			resolution_show_button->is_pressed() ? SNAME("GuiVisibilityVisible") : SNAME("GuiVisibilityHidden")));
+	resolution_center_button->set_button_icon(get_editor_theme_icon(SNAME("EditorPivot")));
+	resolution_orientation_button->set_button_icon(get_editor_theme_icon(SNAME("Orientation")));
+}
+
+void CanvasItemEditor::_update_resolution_orientation_button() {
+	if (!resolution_orientation_button) {
+		return;
+	}
+	bool landscape = false;
+	if (DevicePreviewState *dps = DevicePreviewState::get_singleton()) {
+		landscape = dps->is_landscape();
+	} else {
+		// Fallback inference when the singleton isn't around: a wider
+		// reference frame is conventionally "landscape".
+		const int w = (int)EditorSettings::get_singleton()->get("editors/2d/resolution_guide/width");
+		const int h = (int)EditorSettings::get_singleton()->get("editors/2d/resolution_guide/height");
+		landscape = (w > h);
+	}
+	resolution_orientation_button->set_pressed_no_signal(landscape);
+	resolution_orientation_button->set_tooltip_text(landscape
+			? TTR("Landscape — click to switch to portrait")
+			: TTR("Portrait — click to switch to landscape"));
 }
 
 void CanvasItemEditor::_resolution_show_toggled(bool p_pressed) {
@@ -4603,6 +4722,16 @@ void CanvasItemEditor::_resolution_center_toggled(bool p_pressed) {
 	EditorSettings::get_singleton()->set_setting("editors/2d/resolution_guide/center_aligned", p_pressed);
 	_load_resolution_guide_settings();
 	update_viewport();
+}
+
+void CanvasItemEditor::_resolution_orientation_toggled(bool p_pressed) {
+	// Forward to the shared DevicePreviewState. Its state_changed signal
+	// fans back into _on_device_preview_state_changed where the W/H
+	// mirror + Game-workspace sync happen in one place, so we don't
+	// touch local editor settings directly here.
+	if (DevicePreviewState *dps = DevicePreviewState::get_singleton()) {
+		dps->set_landscape(p_pressed);
+	}
 }
 
 void CanvasItemEditor::_project_settings_changed() {
@@ -6254,14 +6383,52 @@ CanvasItemEditor::CanvasItemEditor() {
 	resolution_guide_label->set_text(TTRC("Res"));
 	resolution_guide_hb->add_child(resolution_guide_label);
 
+	// "Res" preset OptionButton. Populated from DeviceDatabase so the 2D
+	// editor and the Game workspace share the SAME device list -- selecting
+	// iPhone 15 Pro here will also flip the embedded game preview, and
+	// vice versa. ID 0 = Custom (user-driven width/height); ID 1+i is the
+	// preset at index `i` in DeviceDatabase::get_presets(). The dispatch
+	// table mirrors GameView::_build_preview_resolution_menu so the two
+	// stays in lockstep.
 	resolution_preset_button = memnew(OptionButton);
 	resolution_preset_button->set_tooltip_text(TTRC("Resolution preset"));
+	resolution_preset_button->set_focus_mode(FOCUS_ACCESSIBILITY);
+	resolution_preset_button->set_accessibility_name(TTRC("Resolution preset"));
+	resolution_preset_button->set_fit_to_longest_item(false);
 	resolution_preset_button->add_item(TTRC("Custom"), 0);
-	resolution_preset_button->add_item("720 x 1280", 1);
-	resolution_preset_button->add_item("1080 x 1920", 2);
-	resolution_preset_button->add_item("1440 x 2560", 3);
-	resolution_preset_button->add_item("1170 x 2532 (iPhone 14 Pro)", 4);
-	resolution_preset_button->add_item("1290 x 2796 (iPhone 15 Pro Max)", 5);
+	{
+		const DeviceProfile::DeviceClass class_order[] = {
+			DeviceProfile::DEVICE_CLASS_PHONE,
+			DeviceProfile::DEVICE_CLASS_TABLET,
+			DeviceProfile::DEVICE_CLASS_DESKTOP,
+			DeviceProfile::DEVICE_CLASS_CONSOLE,
+			DeviceProfile::DEVICE_CLASS_GENERIC,
+		};
+		const Vector<Ref<DeviceProfile>> &presets = DeviceDatabase::get_presets();
+		for (DeviceProfile::DeviceClass cls : class_order) {
+			bool printed_header = false;
+			for (int i = 0; i < presets.size(); ++i) {
+				const Ref<DeviceProfile> &dp = presets[i];
+				if (dp->get_device_class() != cls) {
+					continue;
+				}
+				if (!printed_header) {
+					const char *header = "Generic";
+					switch (cls) {
+						case DeviceProfile::DEVICE_CLASS_PHONE: header = "Phones"; break;
+						case DeviceProfile::DEVICE_CLASS_TABLET: header = "Tablets"; break;
+						case DeviceProfile::DEVICE_CLASS_DESKTOP: header = "Desktop"; break;
+						case DeviceProfile::DEVICE_CLASS_CONSOLE: header = "Consoles"; break;
+						case DeviceProfile::DEVICE_CLASS_GENERIC: header = "Generic"; break;
+					}
+					resolution_preset_button->add_separator(TTR(header));
+					printed_header = true;
+				}
+				const String label = vformat("%s  (%d\xc3\x97%d)", dp->get_device_name(), dp->get_resolution().x, dp->get_resolution().y);
+				resolution_preset_button->add_item(label, 1 + i);
+			}
+		}
+	}
 	resolution_preset_button->connect(SceneStringName(item_selected), callable_mp(this, &CanvasItemEditor::_resolution_preset_selected));
 	resolution_guide_hb->add_child(resolution_preset_button);
 
@@ -6283,24 +6450,69 @@ CanvasItemEditor::CanvasItemEditor() {
 	resolution_height_spin->connect(SceneStringName(value_changed), callable_mp(this, &CanvasItemEditor::_resolution_height_changed));
 	resolution_guide_hb->add_child(resolution_height_spin);
 
-	resolution_show_checkbox = memnew(CheckBox);
-	resolution_show_checkbox->set_text(TTRC("Show"));
-	resolution_show_checkbox->set_tooltip_text(TTRC("Show resolution guide"));
-	resolution_show_checkbox->connect(SceneStringName(toggled), callable_mp(this, &CanvasItemEditor::_resolution_show_toggled));
-	resolution_guide_hb->add_child(resolution_show_checkbox);
+	// Portrait / Landscape toggle. Shares the orientation flag with the
+	// Game workspace through DevicePreviewState, so flipping it here
+	// flips the Game tab's button (and vice-versa) on the next paint.
+	// Icon-only FlatButton to keep the row compact; tooltip carries the
+	// current orientation label.
+	resolution_orientation_button = memnew(Button);
+	resolution_orientation_button->set_toggle_mode(true);
+	resolution_orientation_button->set_theme_type_variation(SceneStringName(FlatButton));
+	resolution_orientation_button->set_focus_mode(FOCUS_ACCESSIBILITY);
+	resolution_orientation_button->set_accessibility_name(TTRC("Preview Orientation"));
+	resolution_orientation_button->set_tooltip_text(TTRC("Toggle portrait / landscape orientation"));
+	resolution_orientation_button->connect(SceneStringName(toggled), callable_mp(this, &CanvasItemEditor::_resolution_orientation_toggled));
+	resolution_guide_hb->add_child(resolution_orientation_button);
+
+	// VSeparator divides the dim group (preset / W / H / orientation) from
+	// the appearance group (show / color / center) so the row reads as
+	// two distinct intents instead of one undifferentiated pile.
+	resolution_guide_hb->add_child(memnew(VSeparator));
+
+	resolution_show_button = memnew(Button);
+	resolution_show_button->set_toggle_mode(true);
+	resolution_show_button->set_theme_type_variation(SceneStringName(FlatButton));
+	resolution_show_button->set_focus_mode(FOCUS_ACCESSIBILITY);
+	resolution_show_button->set_accessibility_name(TTRC("Show Resolution Guide"));
+	resolution_show_button->set_tooltip_text(TTRC("Show resolution guide"));
+	resolution_show_button->connect(SceneStringName(toggled), callable_mp(this, &CanvasItemEditor::_resolution_show_toggled));
+	resolution_guide_hb->add_child(resolution_show_button);
 
 	resolution_color_button = memnew(ColorPickerButton);
 	resolution_color_button->set_tooltip_text(TTRC("Resolution guide color"));
 	resolution_color_button->set_edit_alpha(true);
+	// Compact the swatch to roughly match the icon FlatButtons' footprint
+	// so the appearance group reads as a single row of square chips.
+	resolution_color_button->set_custom_minimum_size(Size2(28 * EDSCALE, 0));
 	resolution_color_button->get_popup()->connect("about_to_popup", callable_mp(EditorNode::get_singleton(), &EditorNode::setup_color_picker).bind(resolution_color_button->get_picker()));
 	resolution_color_button->connect("color_changed", callable_mp(this, &CanvasItemEditor::_resolution_color_changed));
 	resolution_guide_hb->add_child(resolution_color_button);
 
-	resolution_center_button = memnew(CheckButton);
-	resolution_center_button->set_text(TTRC("Center"));
+	resolution_center_button = memnew(Button);
+	resolution_center_button->set_toggle_mode(true);
+	resolution_center_button->set_theme_type_variation(SceneStringName(FlatButton));
+	resolution_center_button->set_focus_mode(FOCUS_ACCESSIBILITY);
+	resolution_center_button->set_accessibility_name(TTRC("Center Reference Frame"));
 	resolution_center_button->set_tooltip_text(TTRC("Center the reference frame on the origin"));
 	resolution_center_button->connect(SceneStringName(toggled), callable_mp(this, &CanvasItemEditor::_resolution_center_toggled));
 	resolution_guide_hb->add_child(resolution_center_button);
+
+	// Wire up the shared device-preview state so changes coming FROM the
+	// Game workspace land here too. We don't write `editors/2d/resolution_guide/*`
+	// out of band -- the handler will pick up the singleton's resolution
+	// and update both the editor settings and the SpinBox/dropdown.
+	if (DevicePreviewState *dps = DevicePreviewState::get_singleton()) {
+		dps->connect("state_changed", callable_mp(this, &CanvasItemEditor::_on_device_preview_state_changed));
+		// If the singleton already has a device selected (persisted from a
+		// previous session, or set by the Game workspace before we built
+		// the toolbar), mirror it into our editor-settings keys before the
+		// initial _load_resolution_guide_settings() reads them.
+		if (dps->has_device()) {
+			const Size2i oriented = dps->get_resolution_oriented();
+			EditorSettings::get_singleton()->set_setting("editors/2d/resolution_guide/width", oriented.x);
+			EditorSettings::get_singleton()->set_setting("editors/2d/resolution_guide/height", oriented.y);
+		}
+	}
 
 	_load_resolution_guide_settings();
 

@@ -33,11 +33,13 @@
 #include "core/config/project_settings.h"
 #include "core/debugger/debugger_marshalls.h"
 #include "core/object/callable_mp.h"
+#include "core/os/os.h"
 #include "core/os/process_id.h"
 #include "core/string/translation_server.h"
 #include "editor/debugger/editor_debugger_node.h"
 #include "editor/debugger/script_editor_debugger.h"
 #include "editor/plugins/device_preview/device_database.h"
+#include "editor/plugins/device_preview/device_preview_state.h"
 #include "editor/editor_interface.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
@@ -774,37 +776,22 @@ void GameView::_selection_options_menu_id_pressed(int p_id) {
 }
 
 void GameView::_preview_resolution_menu_id_pressed(int p_id) {
-	Ref<DeviceProfile> selected_profile;
+	// Translate the menu's "id" back into a DeviceProfile (or empty for the
+	// "Project" item) and forward to the shared singleton. The state_changed
+	// signal cycles back into _on_device_preview_state_changed, which is
+	// where the local cache, menu, embed sizing, and env vars all refresh.
+	DevicePreviewState *dps = DevicePreviewState::get_singleton();
+	if (!dps) {
+		return;
+	}
 	if (p_id == PREVIEW_RESOLUTION_FREE) {
-		preview_resolution = Size2i();
-		preview_resolution_device_name = String();
+		dps->clear_device();
 	} else if (p_id >= PREVIEW_RESOLUTION_DEVICE_START) {
-		int idx = p_id - PREVIEW_RESOLUTION_DEVICE_START;
+		const int idx = p_id - PREVIEW_RESOLUTION_DEVICE_START;
 		const Vector<Ref<DeviceProfile>> &presets = DeviceDatabase::get_presets();
 		if (idx >= 0 && idx < presets.size()) {
-			selected_profile = presets[idx];
-			preview_resolution = selected_profile->get_resolution();
-			preview_resolution_device_name = selected_profile->get_device_name();
+			dps->set_device_name(presets[idx]->get_device_name());
 		}
-	}
-
-	// NOTE: The resolution selection used to also drive the mobile/pc
-	// feature-tag injection (picking iPhone implied "mobile"). That bridge
-	// is gone -- platform is now an explicit, separate dropdown
-	// (platform_menu) right next to this one, so the user can mix a phone
-	// resolution with the PC branch (or vice versa) if they want to. See
-	// `_on_platform_selected` for the actual injection path.
-
-	EditorSettings::get_singleton()->set_project_metadata("game_view", "preview_resolution_device", preview_resolution_device_name);
-	_build_preview_resolution_menu();
-	_update_preview_resolution_menu_label();
-	_update_preview_orientation_button();
-	_update_embed_window_size();
-	if (window_wrapper && window_wrapper->get_window_enabled()) {
-		_show_update_window_wrapper();
-	}
-	if (embedded_process) {
-		embedded_process->queue_update_embedded_process();
 	}
 }
 
@@ -855,10 +842,33 @@ void GameView::_on_platform_selected(int p_index) {
 }
 
 void GameView::_preview_orientation_toggled(bool p_pressed) {
-	preview_resolution_landscape = p_pressed;
-	EditorSettings::get_singleton()->set_project_metadata("game_view", "preview_resolution_landscape", preview_resolution_landscape);
-	_update_preview_orientation_button();
-	_update_preview_resolution_menu_label();
+	// Forward to the shared singleton; the state_changed signal handler
+	// updates the local cache + UI + embed sizing in one place.
+	if (DevicePreviewState *dps = DevicePreviewState::get_singleton()) {
+		dps->set_landscape(p_pressed);
+	}
+}
+
+void GameView::_on_device_preview_state_changed() {
+	DevicePreviewState *dps = DevicePreviewState::get_singleton();
+	if (!dps) {
+		return;
+	}
+
+	// Refresh local cache from singleton. Note: preview_resolution stores
+	// the device's *native* (portrait) resolution; orientation swap happens
+	// later in _get_embed_target_window_size via _apply_preview_orientation.
+	preview_resolution_device_name = dps->get_device_name();
+	preview_resolution = dps->get_resolution();
+	preview_resolution_landscape = dps->is_landscape();
+
+	if (preview_resolution_menu) {
+		_build_preview_resolution_menu();
+		_update_preview_resolution_menu_label();
+	}
+	if (preview_orientation_button) {
+		_update_preview_orientation_button();
+	}
 	_update_embed_window_size();
 	if (window_wrapper && window_wrapper->get_window_enabled()) {
 		_show_update_window_wrapper();
@@ -1543,6 +1553,41 @@ void GameView::_update_arguments_for_instance(int p_idx, List<String> &r_argumen
 	N = r_arguments.insert_after(N, itos(rect.position.x) + "," + itos(rect.position.y));
 	N = r_arguments.insert_after(N, "--resolution");
 	r_arguments.insert_after(N, itos(rect.size.x) + "x" + itos(rect.size.y));
+
+	// --resolution only sizes the OS window, not the game's internal
+	// `display/window/size/viewport_width/height` (used by main.cpp as
+	// `content_scale_size`). Without that override, picking iPhone 393x852
+	// gives a 393x852 window but the game still renders at the project's
+	// design size (e.g. 960x720) and gets stretched/squished into the
+	// frame. Bridge that gap by writing the desired viewport size into an
+	// env var the child reads at the end of ProjectSettings::setup().
+	// Cleared in EditorRun::run() after the child is spawned (same place
+	// GODOT_EDITOR_CUSTOM_FEATURES is unset) so it never leaks between
+	// non-Game-tab launches.
+	if (_has_preview_resolution()) {
+		const Size2i viewport_size = _get_embed_target_window_size();
+		if (viewport_size != Size2i()) {
+			OS::get_singleton()->set_environment("GODOT_EDITOR_VIEWPORT_OVERRIDE",
+					itos(viewport_size.x) + "x" + itos(viewport_size.y));
+		}
+
+		// Orientation companion. We map the boolean orientation toggle to
+		// the two unambiguous ScreenOrientation enum values so game code
+		// that reads `display/window/handheld/orientation` or
+		// `DisplayServer.screen_get_orientation()` sees the same intent
+		// the toolbar shows. On mobile the OS itself honors this; on
+		// desktop FEATURE_ORIENTATION is absent so the DisplayServer is
+		// a no-op, but the project setting is still readable by code.
+		//   SCREEN_LANDSCAPE = 0
+		//   SCREEN_PORTRAIT  = 1
+		const int orientation = preview_resolution_landscape ? 0 : 1;
+		OS::get_singleton()->set_environment("GODOT_EDITOR_ORIENTATION_OVERRIDE", itos(orientation));
+	} else {
+		// "Project" selection: don't pin a viewport/orientation, let
+		// project.godot win.
+		OS::get_singleton()->unset_environment("GODOT_EDITOR_VIEWPORT_OVERRIDE");
+		OS::get_singleton()->unset_environment("GODOT_EDITOR_ORIENTATION_OVERRIDE");
+	}
 }
 
 void GameView::_window_close_request() {
@@ -1785,16 +1830,16 @@ GameView::GameView(Ref<GameViewDebugger> p_debugger, EmbeddedProcessBase *p_embe
 	embedding_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	main_menu_fc->add_child(embedding_hb);
 
-	preview_resolution_device_name = EditorSettings::get_singleton()->get_project_metadata("game_view", "preview_resolution_device", String());
-	preview_resolution_landscape = EditorSettings::get_singleton()->get_project_metadata("game_view", "preview_resolution_landscape", false);
-	if (!preview_resolution_device_name.is_empty()) {
-		Ref<DeviceProfile> profile = DeviceDatabase::find_by_name(preview_resolution_device_name);
-		if (profile.is_valid()) {
-			preview_resolution = profile->get_resolution();
-		} else {
-			preview_resolution_device_name = String();
-			EditorSettings::get_singleton()->set_project_metadata("game_view", "preview_resolution_device", String());
-		}
+	// Initial state is pulled from the shared DevicePreviewState singleton,
+	// which also performs legacy `game_view/preview_resolution_device`
+	// migration internally. We subscribe to its state_changed signal so the
+	// 2D editor's "Res" toolbar (which writes to the same singleton) drives
+	// the Game workspace and vice-versa with one source of truth.
+	if (DevicePreviewState *dps = DevicePreviewState::get_singleton()) {
+		preview_resolution_device_name = dps->get_device_name();
+		preview_resolution_landscape = dps->is_landscape();
+		preview_resolution = dps->get_resolution();
+		dps->connect("state_changed", callable_mp(this, &GameView::_on_device_preview_state_changed));
 	}
 
 	// --- Platform selector ---------------------------------------------

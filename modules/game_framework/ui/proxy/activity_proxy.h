@@ -5,6 +5,9 @@
 
 #include "context_proxy.h"
 
+#include "core/object/object_id.h"
+#include "core/templates/vector.h"
+
 class Activity;
 
 // Concrete ContextProxy held by ActivityManager::stack. Adds Activity-specific bookkeeping:
@@ -32,6 +35,16 @@ private:
 	bool no_history = false;
 	Ref<Intent> pending_new_intent;
 	LifecycleStage lifecycle_stage = LIFECYCLE_NONE;
+	// True when this Activity was pushed with Intent::FLAG_SCENE -- it
+	// owns a "curtain" over everything that was alive before it. The
+	// ActivityManager uses this flag to decide whether to stay-suspended
+	// when a nested scene above gets popped, and to gate the dialog
+	// restore on this proxy's pop.
+	bool scene_curtain = false;
+	// ObjectIDs of the Dialog nodes that this scene curtain hid+paused
+	// at push time. Restored (set_visible(true) + dispatch_resume) when
+	// the proxy is popped, unless another scene is now on top.
+	Vector<ObjectID> suspended_dialog_ids;
 
 protected:
 	static void _bind_methods();
@@ -47,6 +60,13 @@ public:
 
 	LifecycleStage get_lifecycle_stage() const { return lifecycle_stage; }
 	void _set_lifecycle_stage(LifecycleStage p_stage) { lifecycle_stage = p_stage; }
+
+	// ---- Scene-curtain bookkeeping (Intent::FLAG_SCENE) ----
+	bool is_scene_curtain() const { return scene_curtain; }
+	void _set_scene_curtain(bool p_curtain) { scene_curtain = p_curtain; }
+	void _add_suspended_dialog(ObjectID p_id) { suspended_dialog_ids.push_back(p_id); }
+	const Vector<ObjectID> &get_suspended_dialog_ids() const { return suspended_dialog_ids; }
+	void _clear_suspended_dialogs() { suspended_dialog_ids.clear(); }
 
 	// Returns the live Activity*, or nullptr if it has been freed / not yet attached.
 	Activity *get_activity() const;

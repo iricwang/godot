@@ -12,6 +12,7 @@ extends Dialog
 ## the dialog is open.
 
 const EIHelpers := preload("res://core/ei_helpers.gd")
+const Responsive := preload("res://core/responsive.gd")
 
 var _ia_resume: Resource
 var _ia_restart: Resource
@@ -36,35 +37,37 @@ func _on_create(_saved_state: Dictionary) -> void:
 	# Centered panel.
 	var panel := PanelContainer.new()
 	panel.set_anchors_preset(Control.PRESET_CENTER)
-	panel.custom_minimum_size = Vector2(340, 0)
+	# Was a flat 340; on phones that overflows the gutters, so clamp it.
+	panel.custom_minimum_size = Vector2(Responsive.panel_width(340, self), 0)
 	add_child(panel)
 
 	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 24)
-	margin.add_theme_constant_override("margin_right", 24)
-	margin.add_theme_constant_override("margin_top", 24)
-	margin.add_theme_constant_override("margin_bottom", 24)
+	var m: int = 18 if Responsive.is_compact(self) else 24
+	margin.add_theme_constant_override("margin_left", m)
+	margin.add_theme_constant_override("margin_right", m)
+	margin.add_theme_constant_override("margin_top", m)
+	margin.add_theme_constant_override("margin_bottom", m)
 	panel.add_child(margin)
 
 	var vb := VBoxContainer.new()
-	vb.add_theme_constant_override("separation", 12)
+	vb.add_theme_constant_override("separation", Responsive.gap(12, self))
 	margin.add_child(vb)
 
 	var title := Label.new()
 	title.text = "⏸  Paused"
-	title.add_theme_font_size_override("font_size", 24)
+	title.add_theme_font_size_override("font_size", Responsive.font(24, self))
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(title)
 
 	var hint := Label.new()
 	hint.text = "Take a breath."
 	hint.modulate = Color(0.7, 0.72, 0.78)
-	hint.add_theme_font_size_override("font_size", 13)
+	hint.add_theme_font_size_override("font_size", Responsive.font(13, self))
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(hint)
 
 	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(0, 12)
+	spacer.custom_minimum_size = Vector2(0, Responsive.gap(12, self))
 	vb.add_child(spacer)
 
 	_add_btn(vb, "▶  Resume  [Enter]", _on_resume_pressed)
@@ -77,6 +80,20 @@ func _on_create(_saved_state: Dictionary) -> void:
 func _on_dismiss() -> void:
 	# Drop the priority-100 IMC so the underlying Activity's keys wake up.
 	EIHelpers.remove_context(_imc)
+
+
+func _on_pause() -> void:
+	# A FLAG_SCENE Activity has been pushed on top of us. Surrender the
+	# priority-100 IMC so the scene activity sees a clean keyboard; we'll
+	# re-add it in _on_resume when the scene curtain lifts.
+	EIHelpers.remove_context(_imc)
+
+
+func _on_resume() -> void:
+	# Symmetric to _on_pause. Restore the IMC at the same priority we
+	# originally registered with so the dialog's keys win over the
+	# underlying Activity again.
+	EIHelpers.add_context(_imc, 100)
 
 
 func _setup_keyboard() -> void:
@@ -108,7 +125,7 @@ func _on_setup_standalone(_app: Application) -> void:
 func _add_btn(parent: Node, text: String, cb: Callable) -> Button:
 	var b := Button.new()
 	b.text = text
-	b.custom_minimum_size = Vector2(280, 40)
+	b.custom_minimum_size = Responsive.button_min(Vector2(280, 40), self)
 	b.pressed.connect(cb)
 	parent.add_child(b)
 	return b

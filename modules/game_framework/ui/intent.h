@@ -20,6 +20,16 @@ public:
 		FLAG_REORDER_TO_FRONT = 1 << 3, // if the activity exists in the stack, bring it to the top without destroying anything
 		FLAG_NEW_CLEAR = 1 << 4, // clear the entire back stack (and all dialogs) before starting this activity
 		FLAG_LOAD_SYNC = 1 << 5, // force the synchronous code path (skip async ResourceLoader thread + per-frame poll)
+		// "Scene activity" mode: the new activity takes over the screen entirely.
+		// Every Activity and Dialog currently in the stack gets stop+hide (so
+		// they don't render and their _on_pause/_on_stop fire, dropping any
+		// enhanced_input IMC), and the new activity sits alone on top.
+		// When it later finishes / is popped, the dialogs that existed before
+		// the push are dispatch_resume'd and re-shown; the Activity stack is
+		// restored by the normal pop logic (new top → RESUMED+visible).
+		// Use this for cutscenes, loading screens, full-screen modals that
+		// must guarantee zero interference from the rest of the UI.
+		FLAG_SCENE = 1 << 6,
 	};
 
 private:

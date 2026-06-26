@@ -138,6 +138,73 @@ void ActivityManager::_drop_stack_entry(int p_idx, bool p_dispatch_lifecycle) {
 		proxy->_set_state(ContextProxy::STATE_CANCELLED);
 		proxy->_emit_cancelled();
 	}
+
+	// If this entry was a scene curtain, lift it AFTER the manager state
+	// has settled. Dialogs owned by the scene activity itself were already
+	// dismissed by _dismiss_owned_dialogs above; the lift only restores
+	// dialogs that existed BEFORE this scene was pushed.
+	if (proxy->is_scene_curtain()) {
+		_lift_scene_curtain(proxy);
+	}
+}
+
+// ---- Scene curtain (Intent::FLAG_SCENE) ----
+
+void ActivityManager::_drape_scene_curtain(const Ref<ActivityProxy> &p_new_scene_proxy) {
+	// Stop+hide every Activity already in the stack. This is the visual
+	// difference vs a normal push: normally the previous top stays visible
+	// behind the new activity until _attach_activity hides it; here we hide
+	// EVERYTHING right away, including activities mid-stack that the user
+	// pushed earlier but were already hidden -- idempotent because
+	// _transition_to_stopped_hidden is guarded on lifecycle stage.
+	for (int i = 0; i < stack.size(); ++i) {
+		_transition_to_stopped_hidden(stack[i]);
+	}
+	// Pause+hide every dialog, and record its node id on the new proxy so
+	// we can selectively restore at lift time. Iterate by index because
+	// dialogs may be modified by side effects (none expected, but cheap
+	// to defend against).
+	for (int i = 0; i < dialogs.size(); ++i) {
+		const Ref<DialogProxy> &dp = dialogs[i];
+		if (!dp->is_ready()) {
+			continue;
+		}
+		Dialog *d = dp->get_dialog();
+		if (!d) {
+			continue;
+		}
+		p_new_scene_proxy->_add_suspended_dialog(d->get_instance_id());
+		// Dialog::dispatch_pause is idempotent -- a second scene curtain on
+		// top of this one will re-record the same dialog id but won't
+		// double-fire _on_pause.
+		d->dispatch_pause();
+	}
+}
+
+void ActivityManager::_lift_scene_curtain(const Ref<ActivityProxy> &p_popped) {
+	// If another scene curtain is now the top, leave the dialogs hidden
+	// -- they're still under SOMEONE'S curtain (the still-active one)
+	// and will be lifted when it pops.
+	if (!stack.is_empty()) {
+		Ref<ActivityProxy> new_top = stack[stack.size() - 1];
+		if (new_top.is_valid() && new_top->is_scene_curtain()) {
+			return;
+		}
+	}
+	for (ObjectID id : p_popped->get_suspended_dialog_ids()) {
+		Object *obj = ObjectDB::get_instance(id);
+		if (!obj) {
+			continue; // dialog was already freed (e.g. owner destroyed)
+		}
+		Dialog *d = Object::cast_to<Dialog>(obj);
+		if (!d) {
+			continue;
+		}
+		// dispatch_resume is idempotent (no-op when not paused) so a dialog
+		// that was already lifted by an earlier path is safe.
+		d->dispatch_resume();
+	}
+	p_popped->_clear_suspended_dialogs();
 }
 
 // ---- Lifecycle transition helpers ----
@@ -483,6 +550,15 @@ Ref<ActivityProxy> ActivityManager::start_activity(const Ref<Intent> &p_intent) 
 	}
 	stack.push_back(proxy);
 
+	// Scene-curtain push: stop+hide every existing activity and pause+hide
+	// every existing dialog BEFORE the normal _transition_to_paused(top)
+	// below. The latter becomes a no-op for the now-STOPPED top (guarded
+	// by lifecycle stage) so the ordering is safe.
+	if (p_intent->has_flag(Intent::FLAG_SCENE)) {
+		proxy->_set_scene_curtain(true);
+		_drape_scene_curtain(proxy);
+	}
+
 	// Immediately pause the old top — guarded so a LOADING/mid-stack top is a no-op.
 	// We intentionally do NOT change set_visible: the user keeps seeing the previous
 	// activity until the new one is READY (hidden in _attach_activity).
@@ -646,6 +722,13 @@ void ActivityManager::finish_activity(Activity *p_activity) {
 
 	proxy->_set_state(ContextProxy::STATE_FINISHED);
 	proxy->_emit_finished();
+
+	// Scene-curtain lift: restore the pre-scene dialogs (if no other scene
+	// is still on top). Must happen BEFORE _transition_to_resumed below so
+	// the new top's _on_resume sees the dialogs already visible+resumed.
+	if (proxy->is_scene_curtain()) {
+		_lift_scene_curtain(proxy);
+	}
 
 	const bool was_standalone_root = p_activity->is_standalone() && stack.size() == 0;
 	// Standalone bootstrap root finishing → quit the SceneTree instead of

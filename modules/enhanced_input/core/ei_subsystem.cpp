@@ -698,14 +698,14 @@ void EISubsystem::_notification(int p_what) {
 			// time-based triggers (Hold, Pulse, Tap/DoubleTap timeouts)
 			// would be frozen at runtime.
 			set_process_internal(true);
-			if (_log_level >= 1) {
-				print_line("[EI] Subsystem ready (log_level=", _log_level, ")");
-			}
+			// if (_log_level >= 1) {
+			// 	print_line("[EI] Subsystem ready (log_level=", _log_level, ")");
+			// }
 		} break;
 		case NOTIFICATION_INTERNAL_PROCESS: {
-			if (_log_level >= 2) {
-				print_line("[EI] _process tick");
-			}
+			// if (_log_level >= 2) {
+			// 	print_line("[EI] _process tick");
+			// }
 			// Per spec §4.6: tick all active triggers with
 			// p_event_valid=false so EITriggerHold / EITriggerPulse advance
 			// between key events. Use the real frame delta so thresholds
@@ -725,9 +725,9 @@ void EISubsystem::_notification(int p_what) {
 			_on_application_focus_changed(true);
 		} break;
 		case NOTIFICATION_WM_CLOSE_REQUEST: {
-			if (_log_level >= 1) {
-				print_line("[EI] WM close request");
-			}
+			// if (_log_level >= 1) {
+			// 	print_line("[EI] WM close request");
+			// }
 		} break;
 		default:
 			break;

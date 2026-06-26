@@ -16,6 +16,7 @@ extends Activity
 
 const MainMenuVM := preload("res://view_models/main_menu_vm.gd")
 const EIHelpers := preload("res://core/ei_helpers.gd")
+const Responsive := preload("res://core/responsive.gd")
 
 var vm: MainMenuVM
 var _title: Label
@@ -84,22 +85,22 @@ func _refresh_from_state() -> void:
 func _build_ui() -> void:
 	var vb := VBoxContainer.new()
 	vb.set_anchors_preset(Control.PRESET_CENTER)
-	vb.add_theme_constant_override("separation", 14)
+	vb.add_theme_constant_override("separation", Responsive.gap(14, self))
 	add_child(vb)
 
 	_title = Label.new()
-	_title.add_theme_font_size_override("font_size", 56)
+	_title.add_theme_font_size_override("font_size", Responsive.font(56, self))
 	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(_title)
 
 	_subtitle = Label.new()
-	_subtitle.add_theme_font_size_override("font_size", 18)
+	_subtitle.add_theme_font_size_override("font_size", Responsive.font(18, self))
 	_subtitle.modulate = Color(0.75, 0.78, 0.85)
 	_subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(_subtitle)
 
 	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(0, 24)
+	spacer.custom_minimum_size = Vector2(0, Responsive.gap(24, self))
 	vb.add_child(spacer)
 
 	_start_btn = _make_menu_button("▶  Start  [Enter/Space]", _on_start_pressed)
@@ -110,17 +111,17 @@ func _build_ui() -> void:
 	vb.add_child(_quit_btn)
 
 	var spacer2 := Control.new()
-	spacer2.custom_minimum_size = Vector2(0, 24)
+	spacer2.custom_minimum_size = Vector2(0, Responsive.gap(24, self))
 	vb.add_child(spacer2)
 
 	_best = Label.new()
-	_best.add_theme_font_size_override("font_size", 14)
+	_best.add_theme_font_size_override("font_size", Responsive.font(14, self))
 	_best.modulate = Color(1.0, 0.9, 0.5)
 	_best.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(_best)
 
 	_runs = Label.new()
-	_runs.add_theme_font_size_override("font_size", 12)
+	_runs.add_theme_font_size_override("font_size", Responsive.font(12, self))
 	_runs.modulate = Color(0.65, 0.65, 0.72)
 	_runs.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(_runs)
@@ -129,8 +130,10 @@ func _build_ui() -> void:
 func _make_menu_button(text: String, cb: Callable) -> Button:
 	var b := Button.new()
 	b.text = text
-	b.custom_minimum_size = Vector2(240, 44)
-	b.add_theme_font_size_override("font_size", 18)
+	# Touch-friendly height on phones; preserve the 240px design width as the
+	# min so the menu reads consistently across breakpoints.
+	b.custom_minimum_size = Responsive.button_min(Vector2(240, 44), self)
+	b.add_theme_font_size_override("font_size", Responsive.font(18, self))
 	b.pressed.connect(cb)
 	return b
 

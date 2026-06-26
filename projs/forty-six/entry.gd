@@ -33,6 +33,12 @@ func _ready() -> void:
 		OS.has_feature("pc"),
 		OS.has_feature("web"),
 	])
+	print("[viewport] viewport_width=%d viewport_height=%d  content_scale_size=%s  orientation=%d" % [
+		ProjectSettings.get_setting("display/window/size/viewport_width"),
+		ProjectSettings.get_setting("display/window/size/viewport_height"),
+		get_window().content_scale_size,
+		ProjectSettings.get_setting("display/window/handheld/orientation"),
+	])
 
 	# Dark backdrop so the framed UI reads against the window.
 	var bg := ColorRect.new()

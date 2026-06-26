@@ -126,6 +126,7 @@
 #include "editor/scene/texture/texture_editor_plugin.h"
 #include "editor/scene/texture/texture_layered_editor_plugin.h"
 #include "editor/scene/texture/texture_region_editor_plugin.h"
+#include "editor/plugins/device_preview/device_preview_state.h"
 #include "editor/plugins/device_preview/device_profile.h"
 #include "editor/script/editor_script.h"
 #include "editor/script/editor_script_plugin.h"
@@ -199,6 +200,16 @@ void register_editor_types() {
 	GDREGISTER_CLASS(EditorContextMenuPlugin);
 
 	GDREGISTER_CLASS(DeviceProfile);
+
+	// Shared device-preview selection state. Created here so both the
+	// 2D editor's "Res" toolbar and the Game workspace's Resolution menu
+	// can use it from their own _notification(NOTIFICATION_ENTER_TREE) /
+	// constructor paths without ordering games. Lifetime spans the editor
+	// session; freed in unregister_editor_types.
+	GDREGISTER_CLASS(DevicePreviewState);
+	if (DevicePreviewState::get_singleton() == nullptr) {
+		memnew(DevicePreviewState);
+	}
 
 	GDREGISTER_ABSTRACT_CLASS(FileSystemDock);
 	GDREGISTER_VIRTUAL_CLASS(EditorFileSystemImportFormatSupportQuery);
@@ -339,6 +350,10 @@ void register_editor_types() {
 
 void unregister_editor_types() {
 	OS::get_singleton()->benchmark_begin_measure("Editor", "Unregister Types");
+
+	if (DevicePreviewState *dps = DevicePreviewState::get_singleton()) {
+		memdelete(dps);
+	}
 
 	Texture3DEditor::finish_shaders();
 	TextureLayeredEditor::finish_shaders();

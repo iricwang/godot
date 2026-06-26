@@ -55,6 +55,27 @@ void Dialog::dispatch_dismiss() {
 	GDVIRTUAL_CALL(_on_dismiss);
 }
 
+void Dialog::dispatch_pause() {
+	// Idempotent: a double-pause (e.g. a second FLAG_SCENE activity pushed
+	// on top of an existing one) must not re-fire _on_pause -- otherwise
+	// GDScript subclasses that remove their IMC there would underflow.
+	if (_paused) {
+		return;
+	}
+	_paused = true;
+	set_visible(false);
+	GDVIRTUAL_CALL(_on_pause);
+}
+
+void Dialog::dispatch_resume() {
+	if (!_paused) {
+		return;
+	}
+	_paused = false;
+	set_visible(true);
+	GDVIRTUAL_CALL(_on_resume);
+}
+
 void Dialog::dismiss() {
 	if (_app) {
 		_app->dismiss_dialog(this);
@@ -168,6 +189,7 @@ void Dialog::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_transition_out", "transition"), &Dialog::set_transition_out);
 	ClassDB::bind_method(D_METHOD("get_transition_out"), &Dialog::get_transition_out);
 	ClassDB::bind_method(D_METHOD("dismiss"), &Dialog::dismiss);
+	ClassDB::bind_method(D_METHOD("is_paused"), &Dialog::is_paused);
 
 	ClassDB::bind_method(D_METHOD("set_lifecycle_owner", "owner"), &Dialog::set_lifecycle_owner);
 	ClassDB::bind_method(D_METHOD("get_lifecycle_owner"), &Dialog::get_lifecycle_owner);

@@ -39,12 +39,15 @@ class Dialog : public Control, public ContextBase<Dialog> {
 	Ref<Transition> transition_out;
 	Application *_app = nullptr;
 	Object *owner = nullptr; // lifecycle owner — Dialog is auto-dismissed when the owning Activity is destroyed
+	bool _paused = false; // true while suspended under a FLAG_SCENE activity
 
 protected:
 	static void _bind_methods();
 	void _notification(int p_what);
 
 	GDVIRTUAL1(_on_create, Dictionary)
+	GDVIRTUAL0(_on_pause)
+	GDVIRTUAL0(_on_resume)
 	GDVIRTUAL0(_on_dismiss)
 	GDVIRTUAL1(_on_setup_standalone, Application *)
 
@@ -58,6 +61,15 @@ public:
 
 	void dispatch_create(const Dictionary &p_saved_state);
 	void dispatch_dismiss();
+
+	// Scene-curtain pause/resume. Called by ActivityManager when a
+	// FLAG_SCENE activity is pushed on top of (or popped off of) the
+	// stack: the dialog is hidden + its _on_pause virtual is dispatched
+	// so GDScript subclasses can drop their enhanced_input IMC, freeze
+	// timers, etc. Idempotent -- a double-pause is a no-op.
+	void dispatch_pause();
+	void dispatch_resume();
+	bool is_paused() const { return _paused; }
 
 	// Internal trampoline used by run_standalone_bootstrap via call_deferred.
 	void _dispatch_standalone_lifecycle(bool p_play_transitions);

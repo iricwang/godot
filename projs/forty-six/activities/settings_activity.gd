@@ -13,6 +13,7 @@ extends Activity
 
 const SettingsVM := preload("res://view_models/settings_vm.gd")
 const EIHelpers := preload("res://core/ei_helpers.gd")
+const Responsive := preload("res://core/responsive.gd")
 const DIFFICULTIES := ["Easy (23)", "Normal (46)", "Hard (92)"]
 
 var vm: SettingsVM
@@ -77,25 +78,28 @@ func _on_back_pressed() -> bool:
 func _build_ui() -> void:
 	var vb := VBoxContainer.new()
 	vb.set_anchors_preset(Control.PRESET_CENTER)
-	vb.add_theme_constant_override("separation", 16)
-	vb.custom_minimum_size = Vector2(420, 0)
+	vb.add_theme_constant_override("separation", Responsive.gap(16, self))
+	# Capped at 420 (the desktop design), but never exceed available width
+	# minus gutters -- so a 393-wide phone gets ~369 instead of overflowing.
+	vb.custom_minimum_size = Vector2(Responsive.panel_width(420, self), 0)
 	add_child(vb)
 
 	var title := Label.new()
 	title.text = "⚙  Settings"
-	title.add_theme_font_size_override("font_size", 36)
+	title.add_theme_font_size_override("font_size", Responsive.font(36, self))
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(title)
 
 	var sep := Control.new()
-	sep.custom_minimum_size = Vector2(0, 16)
+	sep.custom_minimum_size = Vector2(0, Responsive.gap(16, self))
 	vb.add_child(sep)
 
 	# Difficulty.
 	_diff_label = Label.new()
-	_diff_label.add_theme_font_size_override("font_size", 16)
+	_diff_label.add_theme_font_size_override("font_size", Responsive.font(16, self))
 	vb.add_child(_diff_label)
 	_diff_opt = OptionButton.new()
+	_diff_opt.custom_minimum_size = Responsive.button_min(Vector2(0, 40), self)
 	for n in DIFFICULTIES:
 		_diff_opt.add_item(n)
 	_diff_opt.item_selected.connect(_on_difficulty_changed)
@@ -107,17 +111,19 @@ func _build_ui() -> void:
 
 	# Volume.
 	_vol_label = Label.new()
-	_vol_label.add_theme_font_size_override("font_size", 16)
+	_vol_label.add_theme_font_size_override("font_size", Responsive.font(16, self))
 	vb.add_child(_vol_label)
 	_vol_slider = HSlider.new()
 	_vol_slider.min_value = 0
 	_vol_slider.max_value = 100
 	_vol_slider.step = 1
+	# A taller slider track on mobile makes it actually grabbable with a thumb.
+	_vol_slider.custom_minimum_size = Vector2(0, 32 if (Responsive.is_compact(self) or Responsive.is_mobile()) else 20)
 	_vol_slider.value_changed.connect(_on_volume_changed)
 	vb.add_child(_vol_slider)
 
 	var sep3 := Control.new()
-	sep3.custom_minimum_size = Vector2(0, 24)
+	sep3.custom_minimum_size = Vector2(0, Responsive.gap(24, self))
 	vb.add_child(sep3)
 
 	# Buttons row.
@@ -127,10 +133,12 @@ func _build_ui() -> void:
 	vb.add_child(hb)
 	_reset_btn = Button.new()
 	_reset_btn.text = "Reset Best  [R]"
+	_reset_btn.custom_minimum_size = Responsive.button_min(Vector2(0, 36), self)
 	_reset_btn.pressed.connect(_on_reset_best)
 	hb.add_child(_reset_btn)
 	_back_btn = Button.new()
 	_back_btn.text = "← Back  [Esc]"
+	_back_btn.custom_minimum_size = Responsive.button_min(Vector2(0, 36), self)
 	_back_btn.pressed.connect(_on_back)
 	hb.add_child(_back_btn)
 
@@ -139,8 +147,14 @@ func _build_ui() -> void:
 	vb.add_child(sep4)
 
 	_hint = Label.new()
-	_hint.text = "Keys: ←/→ difficulty   ↑↓ or +/- volume   R reset   Esc back"
-	_hint.add_theme_font_size_override("font_size", 11)
+	# On compact viewports the long hint wraps mid-row and looks noisy; hide
+	# it (the keys are also surfaced on each control's label).
+	if Responsive.is_compact(self):
+		_hint.text = ""
+		_hint.visible = false
+	else:
+		_hint.text = "Keys: ←/→ difficulty   ↑↓ or +/- volume   R reset   Esc back"
+	_hint.add_theme_font_size_override("font_size", Responsive.font(11, self))
 	_hint.modulate = Color(0.6, 0.62, 0.7)
 	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(_hint)

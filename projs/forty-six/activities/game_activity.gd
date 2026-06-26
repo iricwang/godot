@@ -18,6 +18,7 @@ extends Activity
 
 const GameVM := preload("res://view_models/game_vm.gd")
 const EIHelpers := preload("res://core/ei_helpers.gd")
+const Responsive := preload("res://core/responsive.gd")
 const MILESTONES := [10, 20, 30, 40]
 
 var vm: GameVM
@@ -32,6 +33,11 @@ var _pause_btn: Button
 var _target_clicks: int = 46
 var _elapsed: float = 0.0
 var _running: bool = false
+# Snapshot of `_running` at the moment _on_pause was dispatched. Used to
+# restore the timer state when _on_resume fires (e.g. after a SceneActivity
+# curtain lifts) -- otherwise we'd resume the timer even if the user had
+# already paused via the dialog before the scene took over.
+var _was_running_before_pause: bool = false
 var _emitted_milestones: Array[int] = []
 
 var _ia_click: Resource
@@ -61,11 +67,18 @@ func _on_create(_saved_state: Dictionary) -> void:
 
 
 func _on_resume() -> void:
-	_running = true
+	# Restore the exact timer state the user had before we got paused, NOT
+	# an unconditional `true`. This matters when a SceneActivity curtain
+	# lifts while the PauseDialog is still visible on top of us -- the
+	# user expected to be paused under the dialog, so we must not start
+	# ticking again just because the activity got resumed.
+	_running = _was_running_before_pause
 	EIHelpers.add_context(_imc, 10)
 
 
 func _on_pause() -> void:
+	# Save the pre-pause state so _on_resume can restore it precisely.
+	_was_running_before_pause = _running
 	_running = false
 	EIHelpers.remove_context(_imc)
 
@@ -91,24 +104,33 @@ func _process(delta: float) -> void:
 
 
 func _build_ui() -> void:
+	# Detected once per Activity instance. If the user toggles
+	# Resolution/Orientation in the editor mid-play, the OS window resizes
+	# but content_scale_size stays at the value baked when this Activity
+	# was created -- so these decisions don't go stale within a run.
+	var compact: bool = Responsive.is_compact(self)
+	var portrait_stack: bool = Responsive.stack_vertically(self)
+	var gutter_px: int = Responsive.gutter(self)
+
 	var root_vb := VBoxContainer.new()
 	root_vb.set_anchors_preset(Control.PRESET_FULL_RECT)
-	root_vb.add_theme_constant_override("separation", 10)
+	root_vb.add_theme_constant_override("separation", Responsive.gap(10, self))
 	add_child(root_vb)
 
 	# Top bar — pause + elapsed.
 	var top := HBoxContainer.new()
-	top.custom_minimum_size = Vector2(0, 48)
+	top.custom_minimum_size = Vector2(0, 52 if compact else 48)
 	root_vb.add_child(top)
 	_pause_btn = Button.new()
-	_pause_btn.text = "⏸  Pause  [Esc]"
+	_pause_btn.text = "⏸  Pause" if compact else "⏸  Pause  [Esc]"
+	_pause_btn.custom_minimum_size = Responsive.button_min(Vector2(0, 40), self)
 	_pause_btn.pressed.connect(_show_pause)
 	top.add_child(_pause_btn)
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(spacer)
 	_elapsed_label = Label.new()
-	_elapsed_label.add_theme_font_size_override("font_size", 22)
+	_elapsed_label.add_theme_font_size_override("font_size", Responsive.font(22, self))
 	top.add_child(_elapsed_label)
 
 	# Big count.
@@ -117,28 +139,36 @@ func _build_ui() -> void:
 	center.alignment = BoxContainer.ALIGNMENT_CENTER
 	root_vb.add_child(center)
 
-	var hb := HBoxContainer.new()
-	hb.alignment = BoxContainer.ALIGNMENT_CENTER
-	hb.add_theme_constant_override("separation", 8)
-	center.add_child(hb)
+	# Count vs target: side-by-side on landscape/desktop, stacked on a
+	# portrait phone where horizontal width is the scarce axis.
+	var cluster: BoxContainer
+	if portrait_stack:
+		cluster = VBoxContainer.new()
+	else:
+		cluster = HBoxContainer.new()
+	cluster.alignment = BoxContainer.ALIGNMENT_CENTER
+	cluster.add_theme_constant_override("separation", 8)
+	center.add_child(cluster)
 	_count_label = Label.new()
-	_count_label.add_theme_font_size_override("font_size", 96)
-	hb.add_child(_count_label)
+	_count_label.add_theme_font_size_override("font_size", Responsive.font(96, self))
+	_count_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	cluster.add_child(_count_label)
 	_target_label = Label.new()
-	_target_label.add_theme_font_size_override("font_size", 32)
+	_target_label.add_theme_font_size_override("font_size", Responsive.font(32, self))
 	_target_label.modulate = Color(0.6, 0.6, 0.7)
-	hb.add_child(_target_label)
+	_target_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	cluster.add_child(_target_label)
 
 	_status_label = Label.new()
-	_status_label.add_theme_font_size_override("font_size", 16)
+	_status_label.add_theme_font_size_override("font_size", Responsive.font(16, self))
 	_status_label.modulate = Color(0.75, 0.78, 0.85)
 	_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	center.add_child(_status_label)
 
 	# Progress.
 	var bar_margin := MarginContainer.new()
-	bar_margin.add_theme_constant_override("margin_left", 40)
-	bar_margin.add_theme_constant_override("margin_right", 40)
+	bar_margin.add_theme_constant_override("margin_left", gutter_px)
+	bar_margin.add_theme_constant_override("margin_right", gutter_px)
 	bar_margin.add_theme_constant_override("margin_top", 8)
 	bar_margin.add_theme_constant_override("margin_bottom", 8)
 	root_vb.add_child(bar_margin)
@@ -152,14 +182,16 @@ func _build_ui() -> void:
 
 	# Click button.
 	var bottom_margin := MarginContainer.new()
-	bottom_margin.add_theme_constant_override("margin_left", 40)
-	bottom_margin.add_theme_constant_override("margin_right", 40)
-	bottom_margin.add_theme_constant_override("margin_bottom", 32)
+	bottom_margin.add_theme_constant_override("margin_left", gutter_px)
+	bottom_margin.add_theme_constant_override("margin_right", gutter_px)
+	bottom_margin.add_theme_constant_override("margin_bottom", 24 if compact else 32)
 	root_vb.add_child(bottom_margin)
 	_click_btn = Button.new()
-	_click_btn.text = "Click!  [Space]"
-	_click_btn.custom_minimum_size = Vector2(0, 80)
-	_click_btn.add_theme_font_size_override("font_size", 28)
+	_click_btn.text = "Click!" if compact else "Click!  [Space]"
+	# 80px is desktop-comfortable; phones need at least 64 to feel tappable
+	# in the bottom-of-screen thumb zone.
+	_click_btn.custom_minimum_size = Vector2(0, 64 if compact else 80)
+	_click_btn.add_theme_font_size_override("font_size", Responsive.font(28, self))
 	_click_btn.pressed.connect(_on_click)
 	bottom_margin.add_child(_click_btn)
 

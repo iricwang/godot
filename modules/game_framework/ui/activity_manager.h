@@ -75,6 +75,19 @@ private:
 	int _stack_index_of_activity(Activity *p_act) const;
 	int _dialogs_index_of_dialog(Dialog *p_dlg) const;
 	void _drop_stack_entry(int p_idx, bool p_dispatch_lifecycle); // dispatch_pause/stop/destroy if READY, cancel if LOADING; queue_free node
+	// ---- Scene curtain (Intent::FLAG_SCENE) helpers ----
+	// Stop+hide every Activity currently in the stack and pause+hide every
+	// Dialog. The dialog IDs are recorded on `p_new_scene_proxy` so they
+	// can be selectively restored when that proxy is later popped.
+	// Idempotent against a stack already under another scene curtain
+	// (everything is already STOPPED/_paused), but still records IDs so
+	// the nested scene knows what to restore on its own pop.
+	void _drape_scene_curtain(const Ref<ActivityProxy> &p_new_scene_proxy);
+	// Mirror of the above: dispatch_resume + set_visible(true) on the
+	// dialogs `p_popped` originally suspended, but ONLY when the current
+	// new top isn't itself another scene curtain (otherwise we'd un-hide
+	// dialogs that should still be under a curtain).
+	void _lift_scene_curtain(const Ref<ActivityProxy> &p_popped);
 	String _resolve_scene_path(const String &p_action) const;
 
 	// ---- Async scene load orchestration ----

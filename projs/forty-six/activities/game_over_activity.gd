@@ -12,6 +12,7 @@ extends Activity
 
 const GameOverVM := preload("res://view_models/game_over_vm.gd")
 const EIHelpers := preload("res://core/ei_helpers.gd")
+const Responsive := preload("res://core/responsive.gd")
 
 var vm: GameOverVM
 var _headline: Label
@@ -71,46 +72,46 @@ func _apply_intent() -> void:
 func _build_ui() -> void:
 	var vb := VBoxContainer.new()
 	vb.set_anchors_preset(Control.PRESET_CENTER)
-	vb.add_theme_constant_override("separation", 14)
+	vb.add_theme_constant_override("separation", Responsive.gap(14, self))
 	add_child(vb)
 
 	_headline = Label.new()
-	_headline.add_theme_font_size_override("font_size", 40)
+	_headline.add_theme_font_size_override("font_size", Responsive.font(40, self))
 	_headline.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(_headline)
 
 	_score = Label.new()
-	_score.add_theme_font_size_override("font_size", 24)
+	_score.add_theme_font_size_override("font_size", Responsive.font(24, self))
 	_score.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(_score)
 
 	_best = Label.new()
-	_best.add_theme_font_size_override("font_size", 16)
+	_best.add_theme_font_size_override("font_size", Responsive.font(16, self))
 	_best.modulate = Color(1.0, 0.9, 0.5)
 	_best.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(_best)
 
 	_new_record = Label.new()
-	_new_record.add_theme_font_size_override("font_size", 20)
+	_new_record.add_theme_font_size_override("font_size", Responsive.font(20, self))
 	_new_record.modulate = Color(0.4, 1.0, 0.6)
 	_new_record.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(_new_record)
 
 	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(0, 24)
+	spacer.custom_minimum_size = Vector2(0, Responsive.gap(24, self))
 	vb.add_child(spacer)
 
 	_again_btn = Button.new()
 	_again_btn.text = "↻  Play Again  [Enter/R]"
-	_again_btn.custom_minimum_size = Vector2(240, 44)
-	_again_btn.add_theme_font_size_override("font_size", 18)
+	_again_btn.custom_minimum_size = Responsive.button_min(Vector2(240, 44), self)
+	_again_btn.add_theme_font_size_override("font_size", Responsive.font(18, self))
 	_again_btn.pressed.connect(_on_again)
 	vb.add_child(_again_btn)
 
 	_menu_btn = Button.new()
 	_menu_btn.text = "☰  Main Menu  [M/Esc]"
-	_menu_btn.custom_minimum_size = Vector2(240, 44)
-	_menu_btn.add_theme_font_size_override("font_size", 18)
+	_menu_btn.custom_minimum_size = Responsive.button_min(Vector2(240, 44), self)
+	_menu_btn.add_theme_font_size_override("font_size", Responsive.font(18, self))
 	_menu_btn.pressed.connect(_on_menu)
 	vb.add_child(_menu_btn)
 

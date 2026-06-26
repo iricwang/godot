@@ -377,9 +377,18 @@ private:
 	OptionButton *resolution_preset_button = nullptr;
 	SpinBox *resolution_width_spin = nullptr;
 	SpinBox *resolution_height_spin = nullptr;
-	CheckBox *resolution_show_checkbox = nullptr;
+	// Toggle between portrait (off) and landscape (on). When pressed it
+	// forwards to DevicePreviewState::set_landscape, which is what the
+	// Game workspace's Portrait/Landscape button does too -- they share
+	// the same source of truth and stay in sync via state_changed.
+	Button *resolution_orientation_button = nullptr;
+	// Restyled from a labeled CheckBox to an icon-only FlatButton toggle
+	// (eye on / off) so the Res row matches the rest of the 2D toolbar's
+	// button language and stays compact.
+	Button *resolution_show_button = nullptr;
 	ColorPickerButton *resolution_color_button = nullptr;
-	CheckButton *resolution_center_button = nullptr;
+	// Restyled from a labeled CheckButton to an icon-only FlatButton.
+	Button *resolution_center_button = nullptr;
 
 	// Save/restore state for resolution preview, so ProjectSettings and
 	// SubViewport size_2d_override are properly restored when the preview
@@ -471,7 +480,28 @@ private:
 	void _resolution_show_toggled(bool p_pressed);
 	void _resolution_color_changed(const Color &p_color);
 	void _resolution_center_toggled(bool p_pressed);
+	// Toggle entry point for the new orientation FlatButton. Forwards to
+	// DevicePreviewState::set_landscape; the state_changed signal cycles
+	// back into _on_device_preview_state_changed so we update the UI in
+	// one place.
+	void _resolution_orientation_toggled(bool p_pressed);
 	void _load_resolution_guide_settings();
+	// Pull is_landscape() from the shared DevicePreviewState (or fall
+	// back to W>H) and reflect it into the orientation toggle's pressed
+	// state + tooltip. Idempotent / signal-safe (set_pressed_no_signal).
+	void _update_resolution_orientation_button();
+	// (Re-)set the icons on the orientation / show / center FlatButton
+	// toggles from the current editor theme. Called from the constructor
+	// after the toolbar is built, on NOTIFICATION_THEME_CHANGED, and
+	// whenever the show toggle flips (so the eye-open/eye-closed icon
+	// can swap mid-session without a full theme reload).
+	void _update_resolution_guide_icons();
+	// Pull the current device selection from the shared DevicePreviewState
+	// singleton and reflect it in editors/2d/resolution_guide/{width,height}
+	// + the preset OptionButton. Connected to DevicePreviewState's
+	// state_changed signal so a device pick in the Game workspace
+	// re-anchors the 2D scene in lockstep.
+	void _on_device_preview_state_changed();
 	// Re-anchor the edited scene's Control subtree so it lays out at the
 	// current resolution guide size. ProjectSettings viewport_width/height
 	// is the TOOLS-mode fast path Control::get_parent_anchorable_rect()
